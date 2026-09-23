@@ -1,6 +1,8 @@
 {
-  "name": "MeshPilot Radar",
+  "name": "MeshPilot",
   "description": "An AI-powered web application monitoring & management platform. Real-time application radar, intelligent AI-powered investigation, uptime tracking, and deep system analysis.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

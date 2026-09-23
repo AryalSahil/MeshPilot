@@ -102,7 +102,7 @@ export default function DashboardPreview() {
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-neutral-400" />
             <span className="text-xs font-mono text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
-              meshpilot-ecommerce-store.vercel.app
+              meshpilot.io
             </span>
           </div>
         </div>
