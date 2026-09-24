@@ -5,6 +5,7 @@ import {
   Globe, Network, Code, Server, Check, ChevronDown, Menu, X, Star, FileText, 
   HelpCircle, Heart, RefreshCw, Send, ShieldAlert, Wifi, Globe2
 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 
 // Import Router utilities
 import { RouterProvider, useRouter, Link } from './components/Router';
@@ -706,6 +707,7 @@ export default function App() {
         <AdminAuthProvider>
           <DashboardProvider>
             <AppLayout />
+            <Analytics />
           </DashboardProvider>
         </AdminAuthProvider>
       </AuthProvider>
