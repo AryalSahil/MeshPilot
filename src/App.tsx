@@ -21,9 +21,64 @@ import DocsPage from './pages/DocsPage';
 import LegalPage from './pages/LegalPage';
 import PartnersPage from './pages/PartnersPage';
 
+// Import Auth & Dashboard Contexts
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { DashboardProvider, useDashboard } from './context/DashboardContext';
+import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
+
+// Import Authentication Pages
+import { LoginPage, SignUpPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from './pages/AuthPages';
+import { AdminLoginPage } from './pages/AdminAuthPages';
+import AdminDashboardLayout from './pages/AdminDashboardPages';
+
+// Import Dashboard Core & Sub-Views
+import DashboardLayout from './components/DashboardLayout';
+import DashboardPage from './pages/DashboardPage';
+import { 
+  DashboardProjectsPage, DashboardMonitoringPage, DashboardPerformancePage, 
+  DashboardErrorsPage, DashboardSecurityPage, DashboardRadarPage, 
+  DashboardAIDiagnosticsPage, DashboardDeploymentsPage, DashboardReportsPage, 
+  DashboardIntegrationsPage 
+} from './pages/DashboardSubPages';
+import DashboardSettingsPage from './pages/DashboardSettingsPage';
+
 // Inner App Layout to access routers
 function AppLayout() {
   const { path, navigate } = useRouter();
+  const { user, loading } = useAuth();
+  const { adminUser, adminLoading } = useAdminAuth();
+
+  // Route protection guard
+  useEffect(() => {
+    if (!loading && !adminLoading) {
+      const isDashboardRoute = path.startsWith('/dashboard');
+      const isAuthRoute = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email'].includes(path);
+      const isAdminRoute = path.startsWith('/admin') && path !== '/admin/login';
+      const isAdminLogin = path === '/admin/login';
+
+      if (isAdminRoute) {
+        if (!adminUser) {
+          if (user) {
+            navigate('/dashboard');
+          } else {
+            navigate('/admin/login');
+          }
+        }
+      } else if (isAdminLogin) {
+        if (adminUser) {
+          navigate('/admin/dashboard');
+        }
+      } else if (isDashboardRoute) {
+        if (!user) {
+          navigate('/login');
+        }
+      } else if (isAuthRoute) {
+        if (user) {
+          navigate('/dashboard');
+        }
+      }
+    }
+  }, [path, user, loading, adminUser, adminLoading, navigate]);
 
   // Mobile menu toggle
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -66,7 +121,89 @@ function AppLayout() {
 
   // Render proper view based on path
   const renderPage = () => {
+    if (loading || adminLoading) {
+      return (
+        <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center font-mono text-xs text-neutral-500 gap-3">
+          <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
+          <span>Synchronizing security node clusters...</span>
+        </div>
+      );
+    }
+
+    // Admin nested route switcher
+    if (path.startsWith('/admin')) {
+      if (path === '/admin/login') {
+        return <AdminLoginPage />;
+      }
+      if (!adminUser) return null; // Guarded
+      return <AdminDashboardLayout />;
+    }
+
+    // Dashboard nested route switcher
+    if (path.startsWith('/dashboard')) {
+      if (!user) return null; // Guarded
+
+      const renderDashboardContent = () => {
+        if (path === '/dashboard') {
+          return <DashboardPage />;
+        }
+        if (path.startsWith('/dashboard/projects')) {
+          return <DashboardProjectsPage />;
+        }
+        if (path === '/dashboard/monitoring') {
+          return <DashboardMonitoringPage />;
+        }
+        if (path === '/dashboard/performance') {
+          return <DashboardPerformancePage />;
+        }
+        if (path === '/dashboard/errors') {
+          return <DashboardErrorsPage />;
+        }
+        if (path === '/dashboard/security') {
+          return <DashboardSecurityPage />;
+        }
+        if (path === '/dashboard/radar') {
+          return <DashboardRadarPage />;
+        }
+        if (path === '/dashboard/ai-diagnostics') {
+          return <DashboardAIDiagnosticsPage />;
+        }
+        if (path === '/dashboard/deployments') {
+          return <DashboardDeploymentsPage />;
+        }
+        if (path === '/dashboard/reports') {
+          return <DashboardReportsPage />;
+        }
+        if (path === '/dashboard/integrations') {
+          return <DashboardIntegrationsPage />;
+        }
+        if (path === '/dashboard/settings') {
+          return <DashboardSettingsPage />;
+        }
+        return <DashboardPage />;
+      };
+
+      return (
+        <DashboardLayout>
+          {renderDashboardContent()}
+        </DashboardLayout>
+      );
+    }
+
+    // Authentication Page switcher
     switch (path) {
+      case '/login':
+        return <LoginPage />;
+      case '/signup':
+        return <SignUpPage />;
+      case '/forgot-password':
+        return <ForgotPasswordPage />;
+      case '/reset-password':
+        return <ResetPasswordPage />;
+      case '/verify-email':
+        return <VerifyEmailPage />;
+
+      // Public Marketing pages
       case '/':
         return (
           <LandingPage 
@@ -102,6 +239,14 @@ function AppLayout() {
         );
     }
   };
+
+  const isDashboardRoute = path.startsWith('/dashboard');
+  const isAuthRoute = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email'].includes(path);
+  const isAdminRoute = path.startsWith('/admin');
+
+  if (isDashboardRoute || isAuthRoute || isAdminRoute || loading || adminLoading) {
+    return renderPage();
+  }
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200 overflow-x-hidden">
@@ -212,18 +357,29 @@ function AppLayout() {
 
           {/* Desktop Right Actions */}
           <div className="hidden lg:flex items-center gap-4">
-            <button 
-              onClick={() => alert('Staging sandboxes are accessible. Create a free workspace to authorize deployments.')}
-              className="text-[13px] font-medium text-neutral-400 hover:text-white transition-colors cursor-pointer"
-            >
-              Sign In
-            </button>
-            <button 
-              onClick={() => setSandboxModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-neutral-950 text-xs font-semibold tracking-wide transition-all shadow-md cursor-pointer hover:shadow-lg hover:shadow-white/5"
-            >
-              Get Started Free
-            </button>
+            {user ? (
+              <Link 
+                to="/dashboard"
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold tracking-wide transition-all shadow-md cursor-pointer"
+              >
+                Go to Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link 
+                  to="/login"
+                  className="text-[13px] font-medium text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  Sign In
+                </Link>
+                <Link 
+                  to="/signup"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-neutral-950 text-xs font-semibold tracking-wide transition-all shadow-md cursor-pointer hover:shadow-lg hover:shadow-white/5"
+                >
+                  Get Started Free
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Responsive Hamburger Toggle */}
@@ -320,24 +476,29 @@ function AppLayout() {
             </nav>
             <div className="h-px bg-neutral-900 my-4" />
             <div className="flex flex-col gap-3">
-              <button 
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  alert('Demo pipelines are pre-configured. Get started for a full workspace sandbox.');
-                }}
-                className="w-full py-2.5 rounded-xl text-neutral-400 hover:text-white text-xs font-semibold bg-neutral-900/40 text-center cursor-pointer"
-              >
-                Sign In
-              </button>
-              <button 
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setSandboxModalOpen(true);
-                }}
-                className="w-full py-2.5 rounded-xl bg-white text-neutral-950 text-xs font-semibold text-center cursor-pointer hover:bg-neutral-200"
-              >
-                Get Started Free
-              </button>
+              {user ? (
+                <button 
+                  onClick={() => handleNavigateAndClose('/dashboard')}
+                  className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold text-center cursor-pointer hover:bg-indigo-500"
+                >
+                  Go to Dashboard
+                </button>
+              ) : (
+                <>
+                  <button 
+                    onClick={() => handleNavigateAndClose('/login')}
+                    className="w-full py-2.5 rounded-xl text-neutral-400 hover:text-white text-xs font-semibold bg-neutral-900/40 text-center cursor-pointer"
+                  >
+                    Sign In
+                  </button>
+                  <button 
+                    onClick={() => handleNavigateAndClose('/signup')}
+                    className="w-full py-2.5 rounded-xl bg-white text-neutral-950 text-xs font-semibold text-center cursor-pointer hover:bg-neutral-200"
+                  >
+                    Get Started Free
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -541,7 +702,13 @@ function AppLayout() {
 export default function App() {
   return (
     <RouterProvider>
-      <AppLayout />
+      <AuthProvider>
+        <AdminAuthProvider>
+          <DashboardProvider>
+            <AppLayout />
+          </DashboardProvider>
+        </AdminAuthProvider>
+      </AuthProvider>
     </RouterProvider>
   );
 }
