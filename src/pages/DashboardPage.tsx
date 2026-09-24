@@ -52,7 +52,7 @@ export default function DashboardPage() {
   );
   const totalErrors = projects.reduce((acc, p) => acc + p.errorsCount, 0);
   const avgSecurityScore = Math.round(
-    projects.reduce((acc, p) => acc + p.securityScore, 0) / (projects.length || 1)
+    projects.reduce((acc, p) => acc + (p.securityScore || 100), 0) / (projects.length || 1)
   );
 
   return (

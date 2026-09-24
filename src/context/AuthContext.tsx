@@ -1,10 +1,21 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  signInWithPopup,
+  updateProfile as fbUpdateProfile
+} from 'firebase/auth';
+import { auth, googleAuthProvider } from '../lib/firebase.ts';
 
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
   avatar?: string;
+  role: string;
+  status: string;
   createdAt: string;
   notificationsEnabled: {
     email: boolean;
@@ -17,145 +28,225 @@ export interface UserProfile {
 
 interface AuthContextType {
   user: UserProfile | null;
+  token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<UserProfile>;
   signup: (name: string, email: string, password: string) => Promise<UserProfile>;
-  logout: () => void;
+  loginWithGoogle: () => Promise<UserProfile>;
+  logout: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_USERS_KEY = 'meshpilot_users';
-const SESSION_USER_KEY = 'meshpilot_session';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Sync with Firebase auth state
   useEffect(() => {
-    // Load existing session on load
-    const storedSession = localStorage.getItem(SESSION_USER_KEY);
-    if (storedSession) {
-      try {
-        setUser(JSON.parse(storedSession));
-      } catch (e) {
-        localStorage.removeItem(SESSION_USER_KEY);
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        try {
+          const idToken = await fbUser.getIdToken(true);
+          setToken(idToken);
+
+          // Call our server endpoint to sync and fetch profile
+          const res = await fetch('/api/user/profile', {
+            headers: {
+              'Authorization': `Bearer ${idToken}`
+            }
+          });
+
+          if (!res.ok) {
+            throw new Error('Failed to synchronize user profile with database');
+          }
+
+          const data = await res.json();
+          
+          // Form target UserProfile that the frontend expects
+          const profile: UserProfile = {
+            id: String(data.user.id),
+            name: data.user.name || fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
+            email: data.user.email || fbUser.email || '',
+            avatar: data.user.avatarUrl || fbUser.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.user.name || 'User')}`,
+            role: data.user.role,
+            status: data.user.status,
+            createdAt: data.user.createdAt,
+            notificationsEnabled: {
+              email: true,
+              security: true,
+              performance: true,
+              deployments: true,
+            },
+            theme: 'dark',
+          };
+
+          setUser(profile);
+        } catch (err) {
+          console.error('Error synchronizing auth state:', err);
+          setUser(null);
+          setToken(null);
+        }
+      } else {
+        setUser(null);
+        setToken(null);
       }
-    }
-    setLoading(false);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, password: string): Promise<UserProfile> => {
-    // Small artificial delay to simulate authenticating
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const idToken = await userCredential.user.getIdToken();
+      setToken(idToken);
 
-    const storedUsersRaw = localStorage.getItem(LOCAL_USERS_KEY);
-    const usersList = storedUsersRaw ? JSON.parse(storedUsersRaw) : [];
+      const res = await fetch('/api/user/profile', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error('Failed to retrieve user profile from PostgreSQL');
+      }
+      const data = await res.json();
 
-    // Let's also check if user wants to log in with a dynamic default or any fresh user.
-    // To ensure "no hardcoded fake credentials", we check stored users.
-    // If empty, let's allow them to log in automatically if they sign up first, or we can check credentials.
-    const foundUser = usersList.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+      const profile: UserProfile = {
+        id: String(data.user.id),
+        name: data.user.name || userCredential.user.displayName || email.split('@')[0],
+        email: data.user.email,
+        avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.user.name || 'User')}`,
+        role: data.user.role,
+        status: data.user.status,
+        createdAt: data.user.createdAt,
+        notificationsEnabled: {
+          email: true,
+          security: true,
+          performance: true,
+          deployments: true,
+        },
+        theme: 'dark',
+      };
 
-    if (!foundUser) {
-      throw new Error('Account with this email does not exist. Please sign up first.');
+      setUser(profile);
+      return profile;
+    } catch (error: any) {
+      console.error('Login error:', error);
+      throw new Error(error.message || 'Authentication failed. Please check your credentials.');
     }
-
-    if (foundUser.password !== password) {
-      throw new Error('Incorrect password. Please verify your credentials.');
-    }
-
-    const profile: UserProfile = {
-      id: foundUser.id,
-      name: foundUser.name,
-      email: foundUser.email,
-      avatar: foundUser.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(foundUser.name)}`,
-      createdAt: foundUser.createdAt,
-      notificationsEnabled: foundUser.notificationsEnabled || {
-        email: true,
-        security: true,
-        performance: true,
-        deployments: true,
-      },
-      theme: foundUser.theme || 'dark',
-    };
-
-    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(profile));
-    setUser(profile);
-    return profile;
   };
 
   const signup = async (name: string, email: string, password: string): Promise<UserProfile> => {
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // Update firebase display name
+      if (userCredential.user) {
+        await fbUpdateProfile(userCredential.user, {
+          displayName: name
+        });
+      }
 
-    const storedUsersRaw = localStorage.getItem(LOCAL_USERS_KEY);
-    const usersList = storedUsersRaw ? JSON.parse(storedUsersRaw) : [];
+      const idToken = await userCredential.user.getIdToken();
+      setToken(idToken);
 
-    const exists = usersList.some((u: any) => u.email.toLowerCase() === email.toLowerCase());
-    if (exists) {
-      throw new Error('An account with this email already exists.');
+      // Sync user to PostgreSQL database
+      const res = await fetch('/api/user/profile', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error('Failed to record profile in PostgreSQL database');
+      }
+      const data = await res.json();
+
+      const profile: UserProfile = {
+        id: String(data.user.id),
+        name: name,
+        email: email,
+        avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
+        role: data.user.role,
+        status: data.user.status,
+        createdAt: data.user.createdAt,
+        notificationsEnabled: {
+          email: true,
+          security: true,
+          performance: true,
+          deployments: true,
+        },
+        theme: 'dark',
+      };
+
+      setUser(profile);
+      return profile;
+    } catch (error: any) {
+      console.error('Signup error:', error);
+      throw new Error(error.message || 'Account registration failed.');
     }
-
-    const newUserObj = {
-      id: 'usr_' + Math.random().toString(36).substring(2, 11),
-      name,
-      email: email.toLowerCase(),
-      password, // In a real production backend, this would be salted & hashed
-      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
-      createdAt: new Date().toISOString(),
-      notificationsEnabled: {
-        email: true,
-        security: true,
-        performance: true,
-        deployments: true,
-      },
-      theme: 'dark',
-    };
-
-    usersList.push(newUserObj);
-    localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(usersList));
-
-    const profile: UserProfile = {
-      id: newUserObj.id,
-      name: newUserObj.name,
-      email: newUserObj.email,
-      avatar: newUserObj.avatar,
-      createdAt: newUserObj.createdAt,
-      notificationsEnabled: newUserObj.notificationsEnabled,
-      theme: 'dark',
-    };
-
-    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(profile));
-    setUser(profile);
-    return profile;
   };
 
-  const logout = () => {
-    localStorage.removeItem(SESSION_USER_KEY);
-    setUser(null);
+  const loginWithGoogle = async (): Promise<UserProfile> => {
+    try {
+      const userCredential = await signInWithPopup(auth, googleAuthProvider);
+      const idToken = await userCredential.user.getIdToken();
+      setToken(idToken);
+
+      const res = await fetch('/api/user/profile', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error('Failed to retrieve Google user profile from database');
+      }
+      const data = await res.json();
+
+      const profile: UserProfile = {
+        id: String(data.user.id),
+        name: data.user.name || userCredential.user.displayName || 'Google User',
+        email: data.user.email,
+        avatar: data.user.avatarUrl || userCredential.user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.user.name || 'User')}`,
+        role: data.user.role,
+        status: data.user.status,
+        createdAt: data.user.createdAt,
+        notificationsEnabled: {
+          email: true,
+          security: true,
+          performance: true,
+          deployments: true,
+        },
+        theme: 'dark',
+      };
+
+      setUser(profile);
+      return profile;
+    } catch (error: any) {
+      console.error('Google Auth error:', error);
+      throw new Error(error.message || 'Google Authentication failed.');
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      setToken(null);
+    } catch (error) {
+      console.error('Signout error:', error);
+    }
   };
 
   const updateProfile = (updates: Partial<UserProfile>) => {
     if (!user) return;
-    const updatedUser = { ...user, ...updates };
-    setUser(updatedUser);
-    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(updatedUser));
-
-    // Also update in registered list
-    const storedUsersRaw = localStorage.getItem(LOCAL_USERS_KEY);
-    if (storedUsersRaw) {
-      const usersList = JSON.parse(storedUsersRaw);
-      const index = usersList.findIndex((u: any) => u.id === user.id);
-      if (index !== -1) {
-        usersList[index] = { ...usersList[index], ...updates };
-        localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(usersList));
-      }
-    }
+    setUser(prev => prev ? { ...prev, ...updates } : null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, updateProfile }}>
+    <AuthContext.Provider value={{ user, token, loading, login, signup, loginWithGoogle, logout, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -38,7 +38,7 @@ import {
   DashboardProjectsPage, DashboardMonitoringPage, DashboardPerformancePage, 
   DashboardErrorsPage, DashboardSecurityPage, DashboardRadarPage, 
   DashboardAIDiagnosticsPage, DashboardDeploymentsPage, DashboardReportsPage, 
-  DashboardIntegrationsPage 
+  DashboardIntegrationsPage, MonitorDetailsPage 
 } from './pages/DashboardSubPages';
 import DashboardSettingsPage from './pages/DashboardSettingsPage';
 
@@ -149,6 +149,9 @@ function AppLayout() {
         }
         if (path.startsWith('/dashboard/projects')) {
           return <DashboardProjectsPage />;
+        }
+        if (path.startsWith('/dashboard/monitors')) {
+          return <MonitorDetailsPage />;
         }
         if (path === '/dashboard/monitoring') {
           return <DashboardMonitoringPage />;

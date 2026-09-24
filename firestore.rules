@@ -1,0 +1,187 @@
+rules_version = '2';
+service cloud_firestore {
+  match /databases/{database}/documents {
+
+    // 1. Default-deny Catch-All Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Reusable Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isUserVerified() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'google.com');
+    }
+
+    // Checks if the requesting user is an admin
+    function isAdmin() {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPER_ADMIN'];
+    }
+
+    // --- USERS COLLECTION ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming()) && (
+        incoming().role == 'USER' && incoming().status == 'ACTIVE'
+      );
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming()) && (
+        isAdmin() || (
+          // Prevent regular users from self-promoting or bypassing status
+          incoming().role == existing().role && 
+          incoming().status == existing().status &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'updatedAt'])
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'email', 'name', 'role', 'status', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.role in ['USER', 'ADMIN', 'SUPER_ADMIN'] &&
+             data.status in ['ACTIVE', 'SUSPENDED'] &&
+             data.createdAt is string &&
+             data.updatedAt is string;
+    }
+
+    // --- ORGANIZATIONS COLLECTION ---
+    match /organizations/{orgId} {
+      allow get: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(orgId) && isValidOrg(incoming()) && (
+        incoming().ownerId == request.auth.uid
+      );
+      allow update: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin()) && isValidOrg(incoming()) && (
+        isAdmin() || (
+          incoming().ownerId == existing().ownerId &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'status', 'updatedAt'])
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    function isValidOrg(data) {
+      return data.keys().hasAll(['id', 'name', 'ownerId', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['id', 'name', 'ownerId', 'status', 'createdAt', 'updatedAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 120 &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.status in ['ACTIVE', 'INACTIVE'] &&
+             data.createdAt is string &&
+             data.updatedAt is string;
+    }
+
+    // --- PROJECTS COLLECTION ---
+    match /projects/{projectId} {
+      allow get: if isSignedIn() && (isOrgMember(existing().organizationId) || isAdmin());
+      allow list: if isSignedIn() && (resource == null || isOrgMember(resource.data.organizationId) || isAdmin());
+      allow create: if isSignedIn() && isValidId(projectId) && isValidProject(incoming()) && (
+        isOrgMember(incoming().organizationId) || isAdmin()
+      );
+      allow update: if isSignedIn() && (isOrgMember(existing().organizationId) || isAdmin()) && isValidProject(incoming()) && (
+        isAdmin() || (
+          incoming().organizationId == existing().organizationId &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'websiteUrl', 'environment', 'status', 'uptimeScore', 'performanceScore', 'updatedAt'])
+        )
+      );
+      allow delete: if isSignedIn() && (isOrgMember(existing().organizationId) || isAdmin());
+    }
+
+    function isOrgMember(orgId) {
+      return exists(/databases/$(database)/documents/organizations/$(orgId)) &&
+             (get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerId == request.auth.uid);
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['id', 'organizationId', 'name', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['id', 'organizationId', 'name', 'websiteUrl', 'environment', 'status', 'uptimeScore', 'performanceScore', 'createdAt', 'updatedAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.organizationId is string && data.organizationId.size() <= 128 &&
+             data.name is string && data.name.size() <= 120 &&
+             data.status in ['ACTIVE', 'PAUSED', 'ARCHIVED'] &&
+             data.createdAt is string &&
+             data.updatedAt is string;
+    }
+
+    // --- MONITORS COLLECTION ---
+    match /monitors/{monitorId} {
+      allow get: if isSignedIn() && (isProjectMember(existing().projectId) || isAdmin());
+      allow list: if isSignedIn() && (resource == null || isProjectMember(resource.data.projectId) || isAdmin());
+      allow create: if isSignedIn() && isValidId(monitorId) && isValidMonitor(incoming()) && (
+        isProjectMember(incoming().projectId) || isAdmin()
+      );
+      allow update: if isSignedIn() && (isProjectMember(existing().projectId) || isAdmin()) && isValidMonitor(incoming()) && (
+        isAdmin() || (
+          incoming().projectId == existing().projectId &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'url', 'active', 'lastStatus', 'lastResponseTimeMs', 'lastCheckedAt', 'updatedAt'])
+        )
+      );
+      allow delete: if isSignedIn() && (isProjectMember(existing().projectId) || isAdmin());
+    }
+
+    function isProjectMember(projectId) {
+      return exists(/databases/$(database)/documents/projects/$(projectId)) &&
+             isOrgMember(get(/databases/$(database)/documents/projects/$(projectId)).data.organizationId);
+    }
+
+    function isValidMonitor(data) {
+      return data.keys().hasAll(['id', 'projectId', 'name', 'url', 'active', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['id', 'projectId', 'name', 'url', 'active', 'lastStatus', 'lastResponseTimeMs', 'lastCheckedAt', 'createdAt', 'updatedAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.projectId is string && data.projectId.size() <= 128 &&
+             data.name is string && data.name.size() <= 120 &&
+             data.url is string && data.url.size() <= 512 &&
+             data.active is bool &&
+             data.createdAt is string &&
+             data.updatedAt is string;
+    }
+
+    // --- MONITOR CHECKS COLLECTION ---
+    match /monitor_checks/{checkId} {
+      allow get: if isSignedIn() && (isMonitorMember(existing().monitorId) || isAdmin());
+      allow list: if isSignedIn() && (resource == null || isMonitorMember(resource.data.monitorId) || isAdmin());
+      allow create: if isSignedIn() && isValidId(checkId) && isValidMonitorCheck(incoming()) && (
+        isMonitorMember(incoming().monitorId) || isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    function isMonitorMember(monitorId) {
+      return exists(/databases/$(database)/documents/monitors/$(monitorId)) &&
+             isProjectMember(get(/databases/$(database)/documents/monitors/$(monitorId)).data.projectId);
+    }
+
+    function isValidMonitorCheck(data) {
+      return data.keys().hasAll(['id', 'monitorId', 'status', 'responseTimeMs', 'checkedAt']) &&
+             data.keys().hasOnly(['id', 'monitorId', 'status', 'statusCode', 'responseTimeMs', 'errorType', 'errorMessage', 'checkedAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.monitorId is string && data.monitorId.size() <= 128 &&
+             data.status in ['UP', 'DOWN', 'TIMEOUT', 'ERROR'] &&
+             data.responseTimeMs is int && data.responseTimeMs >= 0 &&
+             data.checkedAt is string;
+    }
+  }
+}

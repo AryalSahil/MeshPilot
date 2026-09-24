@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from './AuthContext.tsx';
 
 export interface Project {
   id: string;
@@ -8,7 +9,7 @@ export interface Project {
   uptime: string;
   responseTime: number;
   errorsCount: number;
-  securityScore: number;
+  securityScore: number | null;
   lastDeployment: string;
   environment: 'Production' | 'Staging' | 'Development';
   integrations: string[];
@@ -26,121 +27,180 @@ export interface NotificationItem {
 interface DashboardContextType {
   projects: Project[];
   notifications: NotificationItem[];
-  addProject: (name: string, url: string, env: 'Production' | 'Staging' | 'Development', integrations: string[]) => void;
+  addProject: (name: string, url: string, env: 'Production' | 'Staging' | 'Development', integrations: string[]) => Promise<void>;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
+  refreshProjects: () => Promise<void>;
+  loadingProjects: boolean;
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
-  const [projects, setProjects] = useState<Project[]>([
-    {
-      id: 'proj_1',
-      name: 'BCA Student Portal',
-      url: 'https://bca-portal.meshpilot.io',
-      status: 'Operational',
-      uptime: '99.99%',
-      responseTime: 164,
-      errorsCount: 3,
-      securityScore: 94,
-      lastDeployment: '5 mins ago',
-      environment: 'Production',
-      integrations: ['Vercel', 'Supabase'],
-    },
-    {
-      id: 'proj_2',
-      name: 'FinTech Hub Gateway',
-      url: 'https://gateway.fintechhub.net',
-      status: 'Operational',
-      uptime: '99.97%',
-      responseTime: 210,
-      errorsCount: 0,
-      securityScore: 98,
-      lastDeployment: '1 hour ago',
-      environment: 'Production',
-      integrations: ['GitHub', 'Supabase'],
-    },
-    {
-      id: 'proj_3',
-      name: 'Internal Dev API',
-      url: 'https://api.dev.local',
-      status: 'Degraded',
-      uptime: '98.45%',
-      responseTime: 512,
-      errorsCount: 143,
-      securityScore: 82,
-      lastDeployment: 'Yesterday',
-      environment: 'Development',
-      integrations: ['GitHub'],
+  const { token, user } = useAuth();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  const fetchNotifications = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/notifications', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mapped: NotificationItem[] = (data.notifications || []).map((n: any) => {
+          // Calculate human-friendly relative time or standard formatted timestamp
+          const diffMs = Date.now() - new Date(n.createdAt).getTime();
+          const diffMins = Math.floor(diffMs / 60000);
+          const diffHrs = Math.floor(diffMins / 60);
+          
+          let relativeTime = 'Just now';
+          if (diffMins > 0 && diffMins < 60) {
+            relativeTime = `${diffMins}m ago`;
+          } else if (diffHrs > 0 && diffHrs < 24) {
+            relativeTime = `${diffHrs}h ago`;
+          } else if (diffHrs >= 24) {
+            relativeTime = new Date(n.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
+          }
+
+          return {
+            id: String(n.id),
+            title: n.title,
+            category: (n.category === 'Downtime' || n.category === 'Security' || n.category === 'Performance' || n.category === 'Errors' || n.category === 'Deployments' || n.category === 'AI Diagnostics') ? n.category : 'Downtime',
+            time: relativeTime,
+            read: n.read,
+            desc: n.description
+          };
+        });
+        setNotifications(mapped);
+      }
+    } catch (err) {
+      console.error('Failed to fetch real-time notifications:', err);
     }
-  ]);
-
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: 'notif_1',
-      title: 'Database connection delay detected',
-      category: 'Performance',
-      time: '2 mins ago',
-      read: false,
-      desc: 'Edge node latency increased by 38% due to pg_stat lock on /api/orders query.'
-    },
-    {
-      id: 'notif_2',
-      title: 'Deployment #184 Successful',
-      category: 'Deployments',
-      time: '12 mins ago',
-      read: false,
-      desc: 'Successfully dispatched main branch deployment trace to 22 global ping regions.'
-    },
-    {
-      id: 'notif_3',
-      title: 'High vulnerability score reported',
-      category: 'Security',
-      time: '1 hour ago',
-      read: true,
-      desc: 'Missing header security keys detected on secondary web app portals.'
-    }
-  ]);
-
-  const addProject = (name: string, url: string, env: 'Production' | 'Staging' | 'Development', integrations: string[]) => {
-    const newProj: Project = {
-      id: 'proj_' + Math.random().toString(36).substring(2, 9),
-      name,
-      url,
-      status: 'Operational',
-      uptime: '100.00%',
-      responseTime: 120,
-      errorsCount: 0,
-      securityScore: 96,
-      lastDeployment: 'Just now',
-      environment: env,
-      integrations,
-    };
-    setProjects(prev => [newProj, ...prev]);
-
-    // Send a real system notification for the creation
-    const newNotif: NotificationItem = {
-      id: 'notif_' + Math.random().toString(36).substring(2, 9),
-      title: `Project "${name}" initialized`,
-      category: 'Deployments',
-      time: 'Just now',
-      read: false,
-      desc: `A new ${env} trace pipeline has been successfully wired.`
-    };
-    setNotifications(prev => [newNotif, ...prev]);
   };
 
-  const markNotificationRead = (id: string) => {
+  const refreshProjects = async () => {
+    if (!token) return;
+    setLoadingProjects(true);
+    try {
+      const res = await fetch('/api/projects', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mapped: Project[] = data.map((dbProj: any) => {
+          const isAwaiting = dbProj.uptimeScore === 100 && dbProj.performanceScore === 100 && dbProj.securityScore === null && dbProj.errorScore === 100;
+          return {
+            id: String(dbProj.id),
+            name: dbProj.name,
+            url: dbProj.websiteUrl || 'No URL',
+            status: dbProj.status === 'ACTIVE' ? 'Operational' : (dbProj.status === 'PAUSED' ? 'Degraded' : 'Downtime'),
+            uptime: isAwaiting ? 'Awaiting data' : `${dbProj.uptimeScore}.00%`, // Use "Awaiting data" as per spec
+            responseTime: isAwaiting ? 0 : dbProj.performanceScore,
+            errorsCount: dbProj.errorScore !== null ? (100 - dbProj.errorScore) / 3 : 0,
+            securityScore: dbProj.securityScore, // Will display null / UNKNOWN until security scanner run
+            lastDeployment: '5 mins ago',
+            environment: dbProj.environment === 'DEVELOPMENT' ? 'Development' : (dbProj.environment === 'STAGING' ? 'Staging' : 'Production'),
+            integrations: ['Vercel', 'Supabase']
+          };
+        });
+        setProjects(mapped);
+      }
+    } catch (e) {
+      console.error('Failed to load projects from DB:', e);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      refreshProjects();
+      fetchNotifications();
+    } else {
+      setProjects([]);
+      setNotifications([]);
+    }
+  }, [token]);
+
+  const addProject = async (name: string, url: string, env: 'Production' | 'Staging' | 'Development', integrations: string[]) => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name,
+          websiteUrl: url,
+          environment: env.toUpperCase(),
+        })
+      });
+
+      if (res.ok) {
+        const dbProj = await res.json();
+        
+        const newProj: Project = {
+          id: String(dbProj.id),
+          name: dbProj.name,
+          url: dbProj.websiteUrl || 'No URL',
+          status: 'Operational',
+          uptime: 'Awaiting data',
+          responseTime: 0,
+          errorsCount: 0,
+          securityScore: null,
+          lastDeployment: 'Just now',
+          environment: env,
+          integrations,
+        };
+
+        setProjects(prev => [newProj, ...prev]);
+        await fetchNotifications();
+      } else {
+        throw new Error('Failed to save project on database server');
+      }
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      throw error;
+    }
+  };
+
+  const markNotificationRead = async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    if (!token) return;
+    try {
+      await fetch(`/api/notifications/${id}/read`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+    } catch (e) {
+      console.error('Failed to mark read on server:', e);
+    }
   };
 
-  const markAllNotificationsRead = () => {
+  const markAllNotificationsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    if (!token) return;
+    try {
+      await fetch(`/api/notifications/read-all`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+    } catch (e) {
+      console.error('Failed to mark all read on server:', e);
+    }
   };
 
   return (
-    <DashboardContext.Provider value={{ projects, notifications, addProject, markNotificationRead, markAllNotificationsRead }}>
+    <DashboardContext.Provider value={{ projects, notifications, addProject, markNotificationRead, markAllNotificationsRead, refreshProjects, loadingProjects }}>
       {children}
     </DashboardContext.Provider>
   );

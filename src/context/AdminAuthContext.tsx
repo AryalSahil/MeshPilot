@@ -1,4 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  signInWithEmailAndPassword, 
+  signOut, 
+  createUserWithEmailAndPassword,
+  onAuthStateChanged
+} from 'firebase/auth';
+import { auth } from '../lib/firebase.ts';
 
 export type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT' | 'ANALYST';
 
@@ -22,136 +29,126 @@ interface AdminAuthContextType {
 
 const AdminAuthContext = createContext<AdminAuthContextType | undefined>(undefined);
 
-const LOCAL_ADMINS_KEY = 'meshpilot_admins';
-const SESSION_ADMIN_KEY = 'meshpilot_admin_session';
-
-// Helper to seed initial admins if they do not exist
-const seedAdminsIfEmpty = () => {
-  const existing = localStorage.getItem(LOCAL_ADMINS_KEY);
-  if (!existing) {
-    const initialAdmins = [
-      {
-        id: 'adm_1',
-        name: 'Sarah Connor',
-        email: 'superadmin@meshpilot.com',
-        password: 'admin123',
-        role: 'SUPER_ADMIN',
-        avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=Sarah',
-        createdAt: '2025-01-10T08:30:00Z',
-        lastActive: new Date().toISOString(),
-      },
-      {
-        id: 'adm_2',
-        name: 'John Doe',
-        email: 'admin@meshpilot.com',
-        password: 'admin123',
-        role: 'ADMIN',
-        avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=John',
-        createdAt: '2025-02-15T09:12:00Z',
-        lastActive: new Date().toISOString(),
-      },
-      {
-        id: 'adm_3',
-        name: 'Marcus Wright',
-        email: 'support@meshpilot.com',
-        password: 'admin123',
-        role: 'SUPPORT',
-        avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=Marcus',
-        createdAt: '2025-03-01T14:20:00Z',
-        lastActive: new Date().toISOString(),
-      },
-      {
-        id: 'adm_4',
-        name: 'Kyle Reese',
-        email: 'analyst@meshpilot.com',
-        password: 'admin123',
-        role: 'ANALYST',
-        avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=Kyle',
-        createdAt: '2025-04-18T11:45:00Z',
-        lastActive: new Date().toISOString(),
-      }
-    ];
-    localStorage.setItem(LOCAL_ADMINS_KEY, JSON.stringify(initialAdmins));
-  }
-};
-
 export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [adminUser, setAdminUser] = useState<AdminProfile | null>(null);
   const [adminLoading, setAdminLoading] = useState(true);
 
+  // Monitor auth state changes to keep admin session synced
   useEffect(() => {
-    seedAdminsIfEmpty();
-    
-    // Load existing admin session
-    const storedSession = localStorage.getItem(SESSION_ADMIN_KEY);
-    if (storedSession) {
-      try {
-        setAdminUser(JSON.parse(storedSession));
-      } catch (e) {
-        localStorage.removeItem(SESSION_ADMIN_KEY);
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        try {
+          const idToken = await fbUser.getIdToken();
+          const res = await fetch('/api/user/profile', {
+            headers: { 'Authorization': `Bearer ${idToken}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const role = data.user.role as AdminRole;
+            const adminRoles: AdminRole[] = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'];
+            
+            if (adminRoles.includes(role)) {
+              setAdminUser({
+                id: String(data.user.id),
+                name: data.user.name || fbUser.displayName || 'Admin',
+                email: data.user.email || fbUser.email || '',
+                avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(data.user.name || 'Admin')}`,
+                role: role,
+                createdAt: data.user.createdAt,
+                lastActive: new Date().toISOString(),
+              });
+            } else {
+              // Not an admin, clear admin state
+              setAdminUser(null);
+            }
+          }
+        } catch (e) {
+          console.error('Error recovering admin user profile:', e);
+          setAdminUser(null);
+        }
+      } else {
+        setAdminUser(null);
       }
-    }
-    setAdminLoading(false);
+      setAdminLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const adminLogin = async (email: string, password: string): Promise<AdminProfile> => {
-    // Artificial delay for realistic feel
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    try {
+      let userCredential;
+      try {
+        // Try to log in directly via Firebase
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+      } catch (fbErr: any) {
+        // If user doesn't exist, check if it's one of our seeded admins with default pass
+        const seedAdmins = [
+          { email: 'superadmin@meshpilot.com', name: 'Sarah Connor', role: 'SUPER_ADMIN' },
+          { email: 'admin@meshpilot.com', name: 'John Doe', role: 'ADMIN' },
+          { email: 'support@meshpilot.com', name: 'Marcus Wright', role: 'SUPPORT' },
+          { email: 'analyst@meshpilot.com', name: 'Kyle Reese', role: 'ANALYST' }
+        ];
+        
+        const matchedSeed = seedAdmins.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
+        if (matchedSeed && password === 'admin123') {
+          // Auto create seed admin in Firebase
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        } else {
+          throw fbErr;
+        }
+      }
 
-    seedAdminsIfEmpty();
-    const storedAdminsRaw = localStorage.getItem(LOCAL_ADMINS_KEY);
-    const adminsList = storedAdminsRaw ? JSON.parse(storedAdminsRaw) : [];
+      const idToken = await userCredential.user.getIdToken();
+      
+      // Load user profile from DB to verify role
+      const res = await fetch('/api/user/profile', {
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to synchronize admin profile with server');
+      }
 
-    const foundAdmin = adminsList.find((a: any) => a.email.toLowerCase() === email.trim().toLowerCase());
+      const data = await res.json();
+      const role = data.user.role as AdminRole;
+      const adminRoles: AdminRole[] = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'];
 
-    if (!foundAdmin) {
-      throw new Error('No administrative account found with this email.');
+      if (!adminRoles.includes(role)) {
+        await signOut(auth);
+        throw new Error('Access Denied: You do not have administrative privileges.');
+      }
+
+      const profile: AdminProfile = {
+        id: String(data.user.id),
+        name: data.user.name || 'Admin',
+        email: data.user.email,
+        avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(data.user.name || 'Admin')}`,
+        role: role,
+        createdAt: data.user.createdAt,
+        lastActive: new Date().toISOString(),
+      };
+
+      setAdminUser(profile);
+      return profile;
+    } catch (error: any) {
+      console.error('Admin Login error:', error);
+      throw new Error(error.message || 'Administrative Authentication failed.');
     }
-
-    if (foundAdmin.password !== password) {
-      throw new Error('Invalid security passphrase. Access denied.');
-    }
-
-    // Update last active
-    foundAdmin.lastActive = new Date().toISOString();
-    const updatedAdmins = adminsList.map((a: any) => a.id === foundAdmin.id ? foundAdmin : a);
-    localStorage.setItem(LOCAL_ADMINS_KEY, JSON.stringify(updatedAdmins));
-
-    const profile: AdminProfile = {
-      id: foundAdmin.id,
-      name: foundAdmin.name,
-      email: foundAdmin.email,
-      avatar: foundAdmin.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(foundAdmin.name)}`,
-      role: foundAdmin.role,
-      createdAt: foundAdmin.createdAt,
-      lastActive: foundAdmin.lastActive,
-    };
-
-    localStorage.setItem(SESSION_ADMIN_KEY, JSON.stringify(profile));
-    setAdminUser(profile);
-    return profile;
   };
 
-  const adminLogout = () => {
-    localStorage.removeItem(SESSION_ADMIN_KEY);
-    setAdminUser(null);
+  const adminLogout = async () => {
+    try {
+      await signOut(auth);
+      setAdminUser(null);
+    } catch (error) {
+      console.error('Admin Signout error:', error);
+    }
   };
 
   const updateAdminProfile = (updates: Partial<AdminProfile>) => {
     if (!adminUser) return;
-    const updated = { ...adminUser, ...updates };
-    setAdminUser(updated);
-    localStorage.setItem(SESSION_ADMIN_KEY, JSON.stringify(updated));
-
-    const storedAdminsRaw = localStorage.getItem(LOCAL_ADMINS_KEY);
-    if (storedAdminsRaw) {
-      const list = JSON.parse(storedAdminsRaw);
-      const index = list.findIndex((a: any) => a.id === adminUser.id);
-      if (index !== -1) {
-        list[index] = { ...list[index], ...updates };
-        localStorage.setItem(LOCAL_ADMINS_KEY, JSON.stringify(list));
-      }
-    }
+    setAdminUser(prev => prev ? { ...prev, ...updates } : null);
   };
 
   return (

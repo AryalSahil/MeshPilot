@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with roles and status flags",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["USER", "ADMIN", "SUPER_ADMIN"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Organization": {
+      "title": "Organization",
+      "description": "Organization boundaries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "ownerId"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Environment profiles tracked under organizations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "name": { "type": "string" },
+        "websiteUrl": { "type": "string" },
+        "environment": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "PAUSED", "ARCHIVED"] },
+        "uptimeScore": { "type": "integer" },
+        "performanceScore": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "organizationId", "name"]
+    },
+    "Monitor": {
+      "title": "Monitor",
+      "description": "Monitor configurations to check endpoints",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "active": { "type": "boolean" },
+        "lastStatus": { "type": "string" },
+        "lastResponseTimeMs": { "type": "integer" },
+        "lastCheckedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectId", "name", "url"]
+    },
+    "MonitorCheck": {
+      "title": "MonitorCheck",
+      "description": "Historical check telemetry records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "monitorId": { "type": "string" },
+        "status": { "type": "string", "enum": ["UP", "DOWN", "TIMEOUT", "ERROR"] },
+        "statusCode": { "type": "integer" },
+        "responseTimeMs": { "type": "integer" },
+        "errorType": { "type": "string" },
+        "errorMessage": { "type": "string" },
+        "checkedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "monitorId", "status", "responseTimeMs"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User records"
+    },
+    "/organizations/{orgId}": {
+      "schema": "Organization",
+      "description": "Organization boundaries"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Projects list"
+    },
+    "/monitors/{monitorId}": {
+      "schema": "Monitor",
+      "description": "Endpoint monitor targets"
+    },
+    "/monitor_checks/{checkId}": {
+      "schema": "MonitorCheck",
+      "description": "Historical health check trace lists"
+    }
+  }
+}

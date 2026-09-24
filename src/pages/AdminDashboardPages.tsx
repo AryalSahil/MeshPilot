@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, Link } from '../components/Router';
 import { useAdminAuth, AdminProfile } from '../context/AdminAuthContext';
+import { useAuth } from '../context/AuthContext';
 import { 
   Users, Building2, Layers, CreditCard, Activity, Shield, Brain, 
   Cpu, MessageSquare, History, Settings, Search, Filter, ArrowLeft, 
@@ -83,6 +84,7 @@ export const logAuditAction = (adminEmail: string, role: string, action: string,
 export default function AdminDashboardLayout() {
   const { path, navigate } = useRouter();
   const { adminUser, adminLogout } = useAdminAuth();
+  const { token } = useAuth();
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -93,47 +95,114 @@ export default function AdminDashboardLayout() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   // Reload database variables
-  const reloadData = () => {
+  const reloadData = async () => {
     seedUsersIfEmpty();
     seedTicketsIfEmpty();
     seedPlansIfEmpty();
     
-    setUsers(JSON.parse(localStorage.getItem(USERS_DB_KEY) || '[]'));
-    setPlans(JSON.parse(localStorage.getItem(PLAN_CONFIG_KEY) || '[]'));
-    setTickets(JSON.parse(localStorage.getItem(TICKETS_KEY) || '[]'));
-    setAuditLogs(JSON.parse(localStorage.getItem(AUDIT_LOGS_KEY) || '[]'));
+    const localUsers = JSON.parse(localStorage.getItem(USERS_DB_KEY) || '[]');
+    const localPlans = JSON.parse(localStorage.getItem(PLAN_CONFIG_KEY) || '[]');
+    const localTickets = JSON.parse(localStorage.getItem(TICKETS_KEY) || '[]');
+    const localLogs = JSON.parse(localStorage.getItem(AUDIT_LOGS_KEY) || '[]');
+
+    setPlans(localPlans);
+    setTickets(localTickets);
+
+    if (token) {
+      try {
+        const res = await fetch('/api/admin/users', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const dbUsers = await res.json();
+          const mappedUsers = dbUsers.map((u: any) => ({
+            id: String(u.id),
+            name: u.name || 'User',
+            email: u.email,
+            projectsCount: u.projects || 0,
+            plan: u.plan?.toLowerCase() || 'free',
+            status: u.status === 'ACTIVE' ? 'Active' : 'Suspended',
+            lastActive: u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Inactive',
+            createdAt: new Date(u.createdAt).toISOString().split('T')[0],
+            orgName: 'Workspace',
+            avatar: u.avatarUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(u.name || 'User')}`,
+          }));
+          setUsers(mappedUsers);
+        } else {
+          setUsers(localUsers);
+        }
+
+        const logsRes = await fetch('/api/admin/audit-logs', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (logsRes.ok) {
+          const dbLogs = await logsRes.json();
+          const mappedLogs = dbLogs.map((l: any) => ({
+            id: String(l.id),
+            action: l.action,
+            actor: l.actorEmail,
+            role: 'ADMIN',
+            target: l.target,
+            ipAddress: l.ipAddress || '127.0.0.1',
+            timestamp: l.createdAt
+          }));
+          setAuditLogs(mappedLogs);
+        } else {
+          setAuditLogs(localLogs);
+        }
+      } catch (err) {
+        console.error('Failed to reload admin data from DB:', err);
+        setUsers(localUsers);
+        setAuditLogs(localLogs);
+      }
+    } else {
+      setUsers(localUsers);
+      setAuditLogs(localLogs);
+    }
   };
 
   useEffect(() => {
     reloadData();
-  }, [path]);
+  }, [path, token]);
 
   // Handle support ticketing replies, user edits, plan modifications, etc.
-  const handleUserSuspend = (id: string) => {
-    const updated = users.map(u => u.id === id ? { ...u, status: u.status === 'Active' ? 'Suspended' : 'Active' } : u);
-    localStorage.setItem(USERS_DB_KEY, JSON.stringify(updated));
-    setUsers(updated);
-    
+  const handleUserSuspend = async (id: string) => {
     const affectedUser = users.find(u => u.id === id);
-    if (affectedUser) {
-      const actionStr = affectedUser.status === 'Active' ? 'Suspended account' : 'Reactivated account';
-      logAuditAction(adminUser?.email || 'admin', adminUser?.role || 'ADMIN', actionStr, affectedUser.email);
+    if (!affectedUser || !token) return;
+
+    const isSuspended = affectedUser.status === 'Suspended';
+    const endpoint = `/api/admin/users/${id}/${isSuspended ? 'reactivate' : 'suspend'}`;
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        reloadData();
+      }
+    } catch (e) {
+      console.error('Failed to suspend/reactivate user:', e);
     }
-    reloadData();
   };
 
-  const handleUserDelete = (id: string) => {
+  const handleUserDelete = async (id: string) => {
     const affectedUser = users.find(u => u.id === id);
-    if (!affectedUser) return;
+    if (!affectedUser || !token) return;
     
     if (confirm(`CRITICAL SECURITY ACTION: Are you sure you want to permanently delete user ${affectedUser.name} (${affectedUser.email}) and all their metrics?`)) {
-      const updated = users.filter(u => u.id !== id);
-      localStorage.setItem(USERS_DB_KEY, JSON.stringify(updated));
-      setUsers(updated);
-      
-      logAuditAction(adminUser?.email || 'admin', adminUser?.role || 'ADMIN', 'Permanently deleted user database record', affectedUser.email);
-      reloadData();
-      navigate('/admin/users');
+      try {
+        const res = await fetch(`/api/admin/users/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          reloadData();
+          navigate('/admin/users');
+        }
+      } catch (e) {
+        console.error('Failed to delete user:', e);
+      }
     }
   };
 
