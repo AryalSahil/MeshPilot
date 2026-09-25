@@ -21,7 +21,7 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 }
 
 export function LoginPage() {
-  const { login, loginWithGoogle } = useAuth();
+  const { user, login, loginWithGoogle } = useAuth();
   const { navigate } = useRouter();
   
   const [email, setEmail] = useState('');
@@ -30,6 +30,12 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -212,7 +218,7 @@ export function LoginPage() {
 }
 
 export function SignUpPage() {
-  const { signup, loginWithGoogle, verifyEmailCode, signUpSession } = useAuth();
+  const { user, signup, loginWithGoogle, verifyEmailCode, signUpSession } = useAuth();
   const { navigate } = useRouter();
 
   const [name, setName] = useState('');
@@ -231,12 +237,18 @@ export function SignUpPage() {
 
   const passwordStrength = getPasswordStrength(password);
 
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+    if (password.length < 15) {
+      setError('Passwords must be 15 characters or more.');
       return;
     }
 
@@ -432,7 +444,7 @@ export function SignUpPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2.5 rounded-xl border border-neutral-800 bg-neutral-950 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60"
-                  placeholder="••••••••••••"
+                  placeholder="Min 15 characters"
                 />
               </div>
 
@@ -441,7 +453,7 @@ export function SignUpPage() {
                 <div className="mt-2 space-y-1 animate-fade-in-down">
                   <div className="flex justify-between text-[9px] font-mono text-neutral-500">
                     <span>STRENGTH: <span className="font-bold text-neutral-300">{passwordStrength.label}</span></span>
-                    <span>Min 8 chars</span>
+                    <span>Min 15 characters</span>
                   </div>
                   <div className="h-1 w-full bg-neutral-900 rounded-full overflow-hidden">
                     <div className={`h-full transition-all duration-300 ${passwordStrength.color}`} style={{ width: `${passwordStrength.score}%` }} />
@@ -465,10 +477,13 @@ export function SignUpPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2.5 rounded-xl border border-neutral-800 bg-neutral-950 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60"
-                  placeholder="••••••••••••"
+                  placeholder="Min 15 characters"
                 />
               </div>
             </div>
+
+            {/* Smart CAPTCHA Widget container required by Clerk bot detection */}
+            <div id="clerk-captcha" className="my-2 flex justify-center"></div>
 
             <div className="flex items-start">
               <div className="flex items-center h-5">

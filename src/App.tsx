@@ -724,7 +724,11 @@ export default function App() {
   }
 
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/login">
+    <ClerkProvider 
+      publishableKey={CLERK_PUBLISHABLE_KEY} 
+      afterSignOutUrl="/login"
+      clerkJSUrl="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+    >
       <RouterProvider>
         <AuthProvider>
           <AdminAuthProvider>
