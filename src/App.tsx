@@ -43,6 +43,7 @@ import {
   DashboardIntegrationsPage, MonitorDetailsPage 
 } from './pages/DashboardSubPages';
 import DashboardSettingsPage from './pages/DashboardSettingsPage';
+import ProfilePage from './pages/ProfilePage';
 
 // Inner App Layout to access routers
 function AppLayout() {
@@ -184,6 +185,9 @@ function AppLayout() {
         }
         if (path === '/dashboard/settings') {
           return <DashboardSettingsPage />;
+        }
+        if (path === '/dashboard/profile') {
+          return <ProfilePage />;
         }
         return <DashboardPage />;
       };

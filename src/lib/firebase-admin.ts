@@ -8,7 +8,9 @@ if (!getApps().length) {
   });
 }
 
-export const adminDb = getFirestore();
+export const adminDb = firebaseConfig.firestoreDatabaseId 
+  ? getFirestore(firebaseConfig.firestoreDatabaseId)
+  : getFirestore();
 
 // Interfaces matching firebase-blueprint.json
 export interface FirestoreUser {

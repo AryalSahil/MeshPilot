@@ -5,7 +5,7 @@ import { useRouter, Link } from './Router';
 import { 
   Shield, Bell, Plus, Menu, X, LogOut, Settings, LayoutDashboard, 
   Layers, Activity, TrendingUp, AlertOctagon, Radio, Brain, GitCommit, 
-  BarChart3, Puzzle, Globe, Github, Database, Sparkles, CheckSquare, Square
+  BarChart3, Puzzle, Globe, Github, Database, Sparkles, CheckSquare, Square, User
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -63,6 +63,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
     { label: 'Reports', path: '/dashboard/reports', icon: BarChart3 },
     { label: 'Integrations', path: '/dashboard/integrations', icon: Puzzle },
     { label: 'Settings', path: '/dashboard/settings', icon: Settings },
+    { label: 'Profile', path: '/dashboard/profile', icon: User },
   ];
 
   return (

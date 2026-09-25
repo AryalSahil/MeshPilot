@@ -1973,33 +1973,24 @@ app.post('/api/cron/monitoring', async (req, res) => {
 // Admin route guard middleware
 const requireAdmin = async (req: AuthRequest, res: any, next: any) => {
   try {
-    const user = req.dbUser;
-    const decodedToken = req.user; // attached in requireAuth
+    const sessionClaims = req.user; // Decoded Clerk session JWT token (session claims)
 
-    if (!user || !decodedToken) {
-      return res.status(401).json({ error: 'Unauthorized: Session missing' });
+    if (!sessionClaims) {
+      return res.status(401).json({ error: 'Unauthorized: Session claims missing' });
     }
 
-    // Securely check Clerk session metadata
-    const clerkUserId = decodedToken.sub;
-    let role = decodedToken.publicMetadata?.role || decodedToken.metadata?.role;
+    // Explicitly check the Clerk session for a specific 'admin' role in sessionClaims.metadata
+    const metadata = sessionClaims.metadata || (sessionClaims as any).publicMetadata || {};
+    const role = String(metadata.role || '').toUpperCase();
 
-    // Direct API fallback to fetch authoritative user profile metadata from Clerk API
-    if (!role && process.env.CLERK_SECRET_KEY) {
-      try {
-        const clerkUser = await clerkClient.users.getUser(clerkUserId);
-        role = clerkUser.publicMetadata?.role;
-      } catch (clerkErr) {
-        console.error('Error fetching Clerk user metadata for admin verification:', clerkErr);
-      }
-    }
-
-    // Unify roles checking metadata first, falling back to synced database role
-    const finalRole = String(role || user.role).toUpperCase();
-
+    // The authorized administrative roles
     const adminRoles = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'];
-    if (!adminRoles.includes(finalRole)) {
-      return res.status(403).json({ error: 'Forbidden: Admin clearance required by Clerk session metadata validation' });
+    
+    // Check if the metadata contains an administrative role
+    if (!adminRoles.includes(role) && role !== 'ADMIN') {
+      return res.status(403).json({ 
+        error: "Forbidden: Only users with the administrative role in sessionClaims.metadata can access `/admin` routes" 
+      });
     }
 
     next();
