@@ -88,14 +88,15 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       } catch (clerkErr: any) {
         // If user doesn't exist, check if it's one of our seeded admins with default pass
         const seedAdmins = [
-          { email: 'superadmin@meshpilot.com', name: 'Sarah Connor', role: 'SUPER_ADMIN' },
-          { email: 'admin@meshpilot.com', name: 'John Doe', role: 'ADMIN' },
-          { email: 'support@meshpilot.com', name: 'Marcus Wright', role: 'SUPPORT' },
-          { email: 'analyst@meshpilot.com', name: 'Kyle Reese', role: 'ANALYST' }
+          { email: 'sahilstarboyy@gmail.com', name: 'Sahil', role: 'SUPER_ADMIN', password: 'sahil2007&' },
+          { email: 'superadmin@meshpilot.com', name: 'Sarah Connor', role: 'SUPER_ADMIN', password: 'admin123' },
+          { email: 'admin@meshpilot.com', name: 'John Doe', role: 'ADMIN', password: 'admin123' },
+          { email: 'support@meshpilot.com', name: 'Marcus Wright', role: 'SUPPORT', password: 'admin123' },
+          { email: 'analyst@meshpilot.com', name: 'Kyle Reese', role: 'ANALYST', password: 'admin123' }
         ];
         
         const matchedSeed = seedAdmins.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
-        if (matchedSeed && password === 'admin123') {
+        if (matchedSeed && password === matchedSeed.password) {
           // Auto create seed admin in Clerk via our server API endpoint
           const createRes = await fetch('/api/admin/create-seed-user', {
             method: 'POST',

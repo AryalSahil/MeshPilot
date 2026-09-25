@@ -38,12 +38,6 @@ export function AdminLoginPage() {
     }
   };
 
-  const fillDemoCredentials = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('admin123');
-    setErrorMsg(null);
-  };
-
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col justify-center items-center p-4 relative font-sans overflow-x-hidden">
       
@@ -184,33 +178,27 @@ export function AdminLoginPage() {
           </form>
         </div>
 
-        {/* Demo Accounts Panel */}
-        <div className="mt-6 rounded-2xl border border-neutral-900 bg-neutral-950 p-4 shadow-xl">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-amber-500 font-bold uppercase mb-2">
+        {/* Authorized Credentials Panel */}
+        <div className="mt-6 rounded-2xl border border-indigo-500/10 bg-indigo-950/5 p-4 shadow-xl">
+          <div className="flex items-center gap-2 text-[10px] font-mono text-indigo-400 font-bold uppercase mb-2">
             <Terminal className="w-3.5 h-3.5" />
-            <span>Sandbox Administrative Clearance Keys</span>
+            <span>Authorized Administrator Access</span>
           </div>
           <p className="text-[10px] text-neutral-500 mb-3">
-            Click an identity node below to pre-fill test session credentials (password is <code className="text-neutral-300 font-mono">admin123</code>):
+            Click the credential node below to pre-fill the secure super-administrator session trace:
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { email: 'superadmin@meshpilot.com', role: 'SUPER_ADMIN' },
-              { email: 'admin@meshpilot.com', role: 'ADMIN' },
-              { email: 'support@meshpilot.com', role: 'SUPPORT' },
-              { email: 'analyst@meshpilot.com', role: 'ANALYST' }
-            ].map(demo => (
-              <button
-                key={demo.email}
-                type="button"
-                onClick={() => fillDemoCredentials(demo.email)}
-                className="p-2 text-left rounded-lg border border-neutral-900 bg-neutral-950 hover:bg-neutral-900/60 hover:border-neutral-800 transition-all cursor-pointer group"
-              >
-                <span className="text-[9px] font-mono font-bold text-neutral-400 group-hover:text-neutral-200 block truncate">{demo.email}</span>
-                <span className="text-[8px] font-mono text-red-500 font-bold mt-0.5 block">{demo.role}</span>
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEmail('sahilstarboyy@gmail.com');
+              setPassword('sahil2007&');
+              setErrorMsg(null);
+            }}
+            className="w-full p-3 text-left rounded-lg border border-indigo-900/30 bg-neutral-950 hover:bg-neutral-950/10 transition-all cursor-pointer group"
+          >
+            <span className="text-[10px] font-mono font-bold text-neutral-300 group-hover:text-white block truncate">sahilstarboyy@gmail.com</span>
+            <span className="text-[8px] font-mono text-indigo-400 font-bold mt-0.5 block">ROLE: SUPER_ADMIN</span>
+          </button>
         </div>
       </div>
     </div>

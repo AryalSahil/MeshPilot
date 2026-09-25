@@ -79,14 +79,15 @@ app.post('/api/admin/create-seed-user', async (req, res) => {
     }
 
     const seedAdmins = [
-      { email: 'superadmin@meshpilot.com', name: 'Sarah Connor', role: 'SUPER_ADMIN' },
-      { email: 'admin@meshpilot.com', name: 'John Doe', role: 'ADMIN' },
-      { email: 'support@meshpilot.com', name: 'Marcus Wright', role: 'SUPPORT' },
-      { email: 'analyst@meshpilot.com', name: 'Kyle Reese', role: 'ANALYST' }
+      { email: 'sahilstarboyy@gmail.com', name: 'Sahil', role: 'SUPER_ADMIN', password: 'sahil2007&' },
+      { email: 'superadmin@meshpilot.com', name: 'Sarah Connor', role: 'SUPER_ADMIN', password: 'admin123' },
+      { email: 'admin@meshpilot.com', name: 'John Doe', role: 'ADMIN', password: 'admin123' },
+      { email: 'support@meshpilot.com', name: 'Marcus Wright', role: 'SUPPORT', password: 'admin123' },
+      { email: 'analyst@meshpilot.com', name: 'Kyle Reese', role: 'ANALYST', password: 'admin123' }
     ];
 
     const matchedSeed = seedAdmins.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
-    if (!matchedSeed || password !== 'admin123') {
+    if (!matchedSeed || password !== matchedSeed.password) {
       return res.status(403).json({ error: 'Invalid seed admin credentials' });
     }
 
@@ -1971,14 +1972,41 @@ app.post('/api/cron/monitoring', async (req, res) => {
 
 // Admin route guard middleware
 const requireAdmin = async (req: AuthRequest, res: any, next: any) => {
-  const user = req.dbUser;
-  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const user = req.dbUser;
+    const decodedToken = req.user; // attached in requireAuth
 
-  const adminRoles = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'];
-  if (!adminRoles.includes(user.role)) {
-    return res.status(403).json({ error: 'Forbidden: Admin clearance required' });
+    if (!user || !decodedToken) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing' });
+    }
+
+    // Securely check Clerk session metadata
+    const clerkUserId = decodedToken.sub;
+    let role = decodedToken.publicMetadata?.role || decodedToken.metadata?.role;
+
+    // Direct API fallback to fetch authoritative user profile metadata from Clerk API
+    if (!role && process.env.CLERK_SECRET_KEY) {
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkUserId);
+        role = clerkUser.publicMetadata?.role;
+      } catch (clerkErr) {
+        console.error('Error fetching Clerk user metadata for admin verification:', clerkErr);
+      }
+    }
+
+    // Unify roles checking metadata first, falling back to synced database role
+    const finalRole = String(role || user.role).toUpperCase();
+
+    const adminRoles = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'];
+    if (!adminRoles.includes(finalRole)) {
+      return res.status(403).json({ error: 'Forbidden: Admin clearance required by Clerk session metadata validation' });
+    }
+
+    next();
+  } catch (err: any) {
+    console.error('Admin authorization middleware exception:', err);
+    res.status(500).json({ error: 'Internal server authorization verification failed' });
   }
-  next();
 };
 
 // Admin metrics overview

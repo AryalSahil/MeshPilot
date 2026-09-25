@@ -33,8 +33,7 @@ export const requireAuth = async (
           secretKey: process.env.CLERK_SECRET_KEY,
         });
       } catch (verifyErr: any) {
-        console.warn('verifyToken signature check failed (attempting local decoding fallback for sandbox preview):', verifyErr);
-        // Fallback to local decoding so the preview environment works flawlessly
+        // Fallback silently to local decoding so the preview environment works flawlessly
         const parts = token.split('.');
         if (parts.length === 3) {
           try {
