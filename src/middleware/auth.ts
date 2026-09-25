@@ -1,12 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
-import { adminAuth } from '../lib/firebase-admin.ts';
 import { db } from '../db/index.ts';
 import { users, organizations, organizationMembers } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
-import { DecodedIdToken } from 'firebase-admin/auth';
+import { createClerkClient, verifyToken } from '@clerk/backend';
+
+export const clerkClient = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY,
+});
 
 export interface AuthRequest extends Request {
-  user?: DecodedIdToken;
+  user?: any;
   dbUser?: typeof users.$inferSelect;
 }
 
@@ -22,24 +25,29 @@ export const requireAuth = async (
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decodedToken = await adminAuth.verifyIdToken(token);
+    const decodedToken = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+    });
     req.user = decodedToken;
 
-    const email = decodedToken.email || '';
-    const name = decodedToken.name || email.split('@')[0] || 'User';
-    const avatarUrl = decodedToken.picture || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+    const clerkUserId = decodedToken.sub;
 
     // Sync to PostgreSQL using Drizzle upsert
     // To handle concurrent inserts of the same user ID safely
-    const existing = await db.select().from(users).where(eq(users.uid, decodedToken.uid)).limit(1);
+    const existing = await db.select().from(users).where(eq(users.uid, clerkUserId)).limit(1);
     
     let dbUserRecord;
     
     if (existing.length === 0) {
-      // First, create the user
+      // First, fetch full user details from Clerk to populate DB correctly
+      const clerkUser = await clerkClient.users.getUser(clerkUserId);
+      const email = clerkUser.emailAddresses[0]?.emailAddress || '';
+      const name = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || email.split('@')[0] || 'User';
+      const avatarUrl = clerkUser.imageUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+
       const inserted = await db.insert(users)
         .values({
-          uid: decodedToken.uid,
+          uid: clerkUserId,
           email: email,
           name: name,
           avatarUrl: avatarUrl,
@@ -92,7 +100,7 @@ export const requireAuth = async (
     req.dbUser = dbUserRecord;
     next();
   } catch (error) {
-    console.error('Error verifying Firebase ID token:', error);
+    console.error('Error verifying Clerk ID token:', error);
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };

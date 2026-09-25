@@ -6,7 +6,7 @@ import {
   Layers, Shield, Activity, TrendingUp, AlertOctagon, Brain, 
   GitCommit, BarChart3, Puzzle, ArrowLeft, CheckCircle, Globe,
   Settings, Terminal, HelpCircle, ExternalLink, Flame, ShieldAlert, Cpu, HardDrive,
-  Plus, Play, Pause, RefreshCw, Trash2, Clock, AlertTriangle, AlertCircle
+  Plus, Play, Pause, RefreshCw, Trash2, Clock, AlertTriangle, AlertCircle, Key
 } from 'lucide-react';
 
 // ==========================================
@@ -65,6 +65,40 @@ export function DashboardProjectsPage() {
   // Monitor operations
   const [checkingMonitorId, setCheckingMonitorId] = useState<number | null>(null);
 
+  // API Monitors State
+  const [apiMonitorsList, setApiMonitorsList] = useState<any[]>([]);
+  const [loadingApiMonitors, setLoadingApiMonitors] = useState(false);
+  
+  // Selected API Monitor details/checks history
+  const [selectedApiMonitorId, setSelectedApiMonitorId] = useState<number | null>(null);
+  const [selectedApiMonitor, setSelectedApiMonitor] = useState<any | null>(null);
+  const [apiChecks, setApiChecks] = useState<any[]>([]);
+  const [apiIncidents, setApiIncidents] = useState<any[]>([]);
+  const [apiPerformance, setApiPerformance] = useState<any | null>(null);
+  const [loadingApiDetail, setLoadingApiDetail] = useState(false);
+
+  // Add API Monitor form state
+  const [showAddApiModal, setShowAddApiModal] = useState(false);
+  const [apiName, setApiName] = useState('');
+  const [apiUrl, setApiUrl] = useState('');
+  const [apiMethod, setApiMethod] = useState('GET');
+  const [apiInterval, setApiInterval] = useState('300');
+  const [apiTimeout, setApiTimeout] = useState('10000');
+  const [apiExpectedStatus, setApiExpectedStatus] = useState('200');
+  const [apiExpectedContentType, setApiExpectedContentType] = useState('');
+  const [apiHeaders, setApiHeaders] = useState('{}');
+  const [apiBody, setApiBody] = useState('');
+  const [apiValidationType, setApiValidationType] = useState('none');
+  const [apiJsonPath, setApiJsonPath] = useState('');
+  const [apiOperator, setApiOperator] = useState('exists');
+  const [apiExpectedValue, setApiExpectedValue] = useState('');
+  const [apiActive, setApiActive] = useState(true);
+  const [addApiError, setAddApiError] = useState('');
+  const [submittingApi, setSubmittingApi] = useState(false);
+
+  // API Monitor check manual triggers loading state
+  const [checkingApiId, setCheckingApiId] = useState<number | null>(null);
+
   // Fetch helper
   const loadProjectData = async () => {
     if (!token || isNaN(parsedProjId)) return;
@@ -73,6 +107,7 @@ export function DashboardProjectsPage() {
     setLoadingStats(true);
     setLoadingIncidents(true);
     setLoadingPerformance(true);
+    setLoadingApiMonitors(true);
 
     try {
       // 1. Load monitors
@@ -84,7 +119,16 @@ export function DashboardProjectsPage() {
         setMonitorsList(mons);
       }
 
-      // 2. Load uptime stats
+      // 2. Load API monitors
+      const apiMonsRes = await fetch(`/api/projects/${parsedProjId}/api-monitors`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (apiMonsRes.ok) {
+        const apiMons = await apiMonsRes.json();
+        setApiMonitorsList(apiMons);
+      }
+
+      // 3. Load uptime stats
       const statsRes = await fetch(`/api/projects/${parsedProjId}/uptime`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -93,7 +137,7 @@ export function DashboardProjectsPage() {
         setUptimeStats(stats);
       }
 
-      // 3. Load performance history
+      // 4. Load performance history
       const perfRes = await fetch(`/api/projects/${parsedProjId}/performance`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -102,7 +146,7 @@ export function DashboardProjectsPage() {
         setPerformanceData(perf);
       }
 
-      // 4. Load incidents
+      // 5. Load incidents
       if (monitorsList.length > 0) {
         // Fetch incidents for the first monitor or all as mock fallback if none
         const incRes = await fetch(`/api/monitors/${monitorsList[0].id}/incidents`, {
@@ -123,14 +167,72 @@ export function DashboardProjectsPage() {
       setLoadingStats(false);
       setLoadingIncidents(false);
       setLoadingPerformance(false);
+      setLoadingApiMonitors(false);
+    }
+  };
+
+  // Helper to load specific API Monitor detailed stats/checks/incidents
+  const loadApiMonitorDetail = async (id: number) => {
+    if (!token) return;
+    setLoadingApiDetail(true);
+    setSelectedApiMonitor(null);
+    try {
+      // Detail
+      const dRes = await fetch(`/api/api-monitors/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (dRes.ok) {
+        const details = await dRes.json();
+        setSelectedApiMonitor(details);
+      }
+
+      // Checks
+      const cRes = await fetch(`/api/api-monitors/${id}/checks?limit=15`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (cRes.ok) {
+        const data = await cRes.json();
+        setApiChecks(data.checks || []);
+      }
+
+      // Incidents
+      const iRes = await fetch(`/api/api-monitors/${id}/incidents`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (iRes.ok) {
+        const incs = await iRes.json();
+        setApiIncidents(incs || []);
+      }
+
+      // Performance stats
+      const pRes = await fetch(`/api/api-monitors/${id}/performance`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (pRes.ok) {
+        const stats = await pRes.json();
+        setApiPerformance(stats);
+      }
+
+    } catch (err) {
+      console.error('Failed to load API monitor detail:', err);
+    } finally {
+      setLoadingApiDetail(false);
     }
   };
 
   useEffect(() => {
     if (token && !isNaN(parsedProjId)) {
       loadProjectData();
+      setSelectedApiMonitorId(null);
+      setSelectedApiMonitor(null);
     }
   }, [token, projectIdSuffix]);
+
+  useEffect(() => {
+    if (selectedApiMonitorId) {
+      loadApiMonitorDetail(selectedApiMonitorId);
+    }
+  }, [selectedApiMonitorId]);
 
   // Handle Add Monitor
   const handleAddMonitorSubmit = async (e: React.FormEvent) => {
@@ -301,6 +403,159 @@ export function DashboardProjectsPage() {
     }
   };
 
+  // Add API Monitor Handler
+  const handleAddApiSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddApiError('');
+    setSubmittingApi(true);
+
+    try {
+      // Parse custom headers
+      let headersParsed = {};
+      if (apiHeaders) {
+        try {
+          headersParsed = JSON.parse(apiHeaders);
+        } catch (err) {
+          throw new Error('Invalid JSON format inside Request Headers. Use key-value string pairs, e.g. {"Authorization": "Bearer {{MY_SECRET}}"}.');
+        }
+      }
+
+      // Compile response validations structure
+      let responseValidation: any = null;
+      if (apiValidationType !== 'none') {
+        responseValidation = {
+          type: apiValidationType,
+          jsonPath: apiValidationType === 'json_path' ? apiJsonPath : undefined,
+          operator: apiValidationType === 'json_path' ? apiOperator : undefined,
+          expectedValue: apiExpectedValue || undefined
+        };
+      }
+
+      const res = await fetch(`/api/projects/${parsedProjId}/api-monitors`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: apiName,
+          endpointUrl: apiUrl,
+          method: apiMethod,
+          intervalSeconds: parseInt(apiInterval),
+          timeoutMs: parseInt(apiTimeout),
+          expectedStatusCode: parseInt(apiExpectedStatus),
+          expectedContentType: apiExpectedContentType || undefined,
+          requestHeaders: headersParsed,
+          requestBody: apiBody || undefined,
+          responseValidation,
+          active: apiActive
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || 'Failed to create API monitor');
+      }
+
+      // Reset form
+      setApiName('');
+      setApiUrl('');
+      setApiHeaders('{}');
+      setApiBody('');
+      setApiExpectedContentType('');
+      setApiJsonPath('');
+      setApiExpectedValue('');
+      setApiValidationType('none');
+      setApiActive(true);
+      setShowAddApiModal(false);
+      await loadProjectData();
+    } catch (err: any) {
+      setAddApiError(err.message || 'Error occurred while creating API monitor.');
+    } finally {
+      setSubmittingApi(false);
+    }
+  };
+
+  // Run API Check manual trigger
+  const handleRunApiCheckNow = async (id: number) => {
+    setCheckingApiId(id);
+    try {
+      const res = await fetch(`/api/api-monitors/${id}/check`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        await loadProjectData();
+        if (selectedApiMonitorId === id) {
+          await loadApiMonitorDetail(id);
+        }
+      }
+    } catch (err) {
+      console.error('Manual API check trigger failed:', err);
+    } finally {
+      setCheckingApiId(null);
+    }
+  };
+
+  // Delete API Monitor
+  const handleDeleteApiMonitor = async (id: number) => {
+    if (confirm('Are you sure you want to permanently delete this API monitor and its performance history?')) {
+      try {
+        const res = await fetch(`/api/api-monitors/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          setSelectedApiMonitorId(null);
+          setSelectedApiMonitor(null);
+          await loadProjectData();
+        }
+      } catch (err) {
+        console.error('Delete API monitor failed:', err);
+      }
+    }
+  };
+
+  // Pause API Monitor
+  const handlePauseApiMonitor = async (id: number) => {
+    try {
+      const res = await fetch(`/api/api-monitors/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ active: false })
+      });
+      if (res.ok) {
+        await loadProjectData();
+        if (selectedApiMonitorId === id) loadApiMonitorDetail(id);
+      }
+    } catch (err) {
+      console.error('Pause failed:', err);
+    }
+  };
+
+  // Resume API Monitor
+  const handleResumeApiMonitor = async (id: number) => {
+    try {
+      const res = await fetch(`/api/api-monitors/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ active: true })
+      });
+      if (res.ok) {
+        await loadProjectData();
+        if (selectedApiMonitorId === id) loadApiMonitorDetail(id);
+      }
+    } catch (err) {
+      console.error('Resume failed:', err);
+    }
+  };
+
   if (selectedProject) {
     const isAwaitingData = !uptimeStats || uptimeStats.totalChecks === 0;
 
@@ -352,13 +607,18 @@ export function DashboardProjectsPage() {
         <div className="border-b border-neutral-900 flex gap-6 text-[10px] font-mono uppercase tracking-wider">
           {[
             { id: 'overview', label: 'Overview' },
-            { id: 'monitors', label: `Monitors (${monitorsList.length})` },
+            { id: 'monitors', label: `Standard Monitors (${monitorsList.length})` },
+            { id: 'apiMonitors', label: `API Monitors (${apiMonitorsList.length})` },
             { id: 'performance', label: 'Performance Analytics' },
             { id: 'incidents', label: 'Incidents' }
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveSubTab(tab.id as any)}
+              onClick={() => {
+                setActiveSubTab(tab.id as any);
+                setSelectedApiMonitorId(null);
+                setSelectedApiMonitor(null);
+              }}
               className={`pb-2.5 px-1 border-b-2 font-semibold transition-colors cursor-pointer ${activeSubTab === tab.id ? 'border-indigo-500 text-white' : 'border-transparent text-neutral-500 hover:text-neutral-300'}`}
             >
               {tab.label}
@@ -1016,44 +1276,908 @@ export function DashboardPerformancePage() {
 // ==========================================
 // 4. ERRORS PAGE
 // ==========================================
+// ==========================================
+// 4. ERRORS PAGE (REAL ERROR TRACKING ARCHITECTURE)
+// ==========================================
 export function DashboardErrorsPage() {
+  const { projects } = useDashboard();
+  const { token } = useAuth();
+
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'errors' | 'keys' | 'releases'>('errors');
+
+  // Errors state
+  const [errorsList, setErrorsList] = useState<any[]>([]);
+  const [loadingErrors, setLoadingErrors] = useState(false);
+  const [errorTotalCount, setErrorTotalCount] = useState(0);
+  const [errorsPage, setErrorsPage] = useState(1);
+  const [selectedErrorId, setSelectedErrorId] = useState<number | null>(null);
+  const [errorDetail, setErrorRecord] = useState<any | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Timeline events state
+  const [timelineEvents, setTimelineEvents] = useState<any[]>([]);
+  const [timelinePage, setTimelinePage] = useState(1);
+  const [timelineTotal, setTimelineTotal] = useState(0);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+
+  // Ingestion Keys state
+  const [keysList, setKeysList] = useState<any[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState(false);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [generatedRawKey, setGeneratedRawKey] = useState<string | null>(null);
+  const [submittingKey, setSubmittingKey] = useState(false);
+
+  // Releases state
+  const [releasesList, setReleasesList] = useState<any[]>([]);
+  const [loadingReleases, setLoadingReleases] = useState(false);
+  const [newReleaseVersion, setNewReleaseVersion] = useState('');
+  const [newReleaseCommit, setNewReleaseCommit] = useState('');
+  const [newReleaseEnv, setNewReleaseEnv] = useState('PRODUCTION');
+  const [submittingRelease, setSubmittingRelease] = useState(false);
+
+  // Error Filters
+  const [filterEnv, setFilterEnv] = useState('');
+  const [filterSeverity, setFilterSeverity] = useState('');
+  const [filterStatus, setFilterStatus] = useState('OPEN');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Toast / Status Copying
+  const [copiedIndex, setCopiedIndex] = useState(false);
+
+  // Load active project automatically if projects list is available
+  useEffect(() => {
+    if (projects.length > 0 && !selectedProjectId) {
+      setSelectedProjectId(parseInt(projects[0].id));
+    }
+  }, [projects]);
+
+  // Load Errors
+  const loadErrors = async () => {
+    if (!token || !selectedProjectId) return;
+    setLoadingErrors(true);
+    try {
+      const url = new URL(`/api/projects/${selectedProjectId}/errors`, window.location.origin);
+      url.searchParams.append('page', String(errorsPage));
+      url.searchParams.append('limit', '10');
+      if (filterEnv) url.searchParams.append('environment', filterEnv);
+      if (filterSeverity) url.searchParams.append('severity', filterSeverity);
+      if (filterStatus) url.searchParams.append('status', filterStatus);
+      if (searchQuery) url.searchParams.append('search', searchQuery);
+
+      const res = await fetch(url.toString(), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setErrorsList(data.errors || []);
+        setErrorTotalCount(data.total || 0);
+      }
+    } catch (err) {
+      console.error('Failed to load error groups:', err);
+    } finally {
+      setLoadingErrors(false);
+    }
+  };
+
+  // Load Ingestion Keys
+  const loadKeys = async () => {
+    if (!token || !selectedProjectId) return;
+    setLoadingKeys(true);
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectId}/ingestion-keys`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeysList(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load keys:', err);
+    } finally {
+      setLoadingKeys(false);
+    }
+  };
+
+  // Load Releases
+  const loadReleases = async () => {
+    if (!token || !selectedProjectId) return;
+    setLoadingReleases(true);
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectId}/releases`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReleasesList(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load releases:', err);
+    } finally {
+      setLoadingReleases(false);
+    }
+  };
+
+  // Trigger loads based on active subtab
+  useEffect(() => {
+    if (selectedProjectId) {
+      if (activeTab === 'errors') loadErrors();
+      if (activeTab === 'keys') loadKeys();
+      if (activeTab === 'releases') loadReleases();
+    }
+  }, [selectedProjectId, activeTab, errorsPage, filterEnv, filterSeverity, filterStatus, searchQuery]);
+
+  // Load individual error detail
+  const loadErrorDetail = async (errorId: number) => {
+    if (!token) return;
+    setLoadingDetail(true);
+    setErrorRecord(null);
+    try {
+      const res = await fetch(`/api/errors/${errorId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setErrorRecord(data);
+        // Reset timeline page
+        setTimelinePage(1);
+        loadTimelineEvents(errorId, 1);
+      }
+    } catch (err) {
+      console.error('Failed to load error detail:', err);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  // Load error occurrence timeline events (paginated)
+  const loadTimelineEvents = async (errorId: number, page: number) => {
+    if (!token) return;
+    setLoadingTimeline(true);
+    try {
+      const res = await fetch(`/api/errors/${errorId}/events?page=${page}&limit=5`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTimelineEvents(data.events || []);
+        setTimelineTotal(data.total || 0);
+      }
+    } catch (err) {
+      console.error('Failed to load timeline events:', err);
+    } finally {
+      setLoadingTimeline(false);
+    }
+  };
+
+  // Mutate error state (Resolve, Reopen, Ignore)
+  const handleUpdateErrorState = async (errorId: number, newStatus: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/errors/${errorId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        await loadErrors();
+        await loadErrorDetail(errorId);
+      }
+    } catch (err) {
+      console.error('Failed to update error state:', err);
+    }
+  };
+
+  // Assign error to user
+  const handleAssignUser = async (errorId: number, userIdStr: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/errors/${errorId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ assignedTo: userIdStr ? parseInt(userIdStr) : null })
+      });
+      if (res.ok) {
+        await loadErrors();
+        await loadErrorDetail(errorId);
+      }
+    } catch (err) {
+      console.error('Failed to assign user:', err);
+    }
+  };
+
+  // Generate Ingestion Key
+  const handleCreateKeySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKeyName || submittingKey) return;
+    setSubmittingKey(true);
+    setGeneratedRawKey(null);
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectId}/ingestion-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newKeyName })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGeneratedRawKey(data.rawKey);
+        setNewKeyName('');
+        await loadKeys();
+      }
+    } catch (err) {
+      console.error('Key generation failed:', err);
+    } finally {
+      setSubmittingKey(false);
+    }
+  };
+
+  // Revoke Ingestion Key
+  const handleRevokeKey = async (keyId: number) => {
+    if (!confirm('Are you sure you want to permanently revoke this ingestion key? SDK clients using this key will immediately be blocked.')) return;
+    try {
+      const res = await fetch(`/api/ingestion-keys/${keyId}/revoke`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        await loadKeys();
+      }
+    } catch (err) {
+      console.error('Revocation failed:', err);
+    }
+  };
+
+  // Register a release version
+  const handleRegisterReleaseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newReleaseVersion || submittingRelease) return;
+    setSubmittingRelease(true);
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectId}/releases`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          version: newReleaseVersion,
+          commitSha: newReleaseCommit || null,
+          environment: newReleaseEnv
+        })
+      });
+      if (res.ok) {
+        setNewReleaseVersion('');
+        setNewReleaseCommit('');
+        await loadReleases();
+      }
+    } catch (err) {
+      console.error('Release registry failed:', err);
+    } finally {
+      setSubmittingRelease(false);
+    }
+  };
+
+  const handleCopyStack = (trace: string) => {
+    navigator.clipboard.writeText(trace);
+    setCopiedIndex(true);
+    setTimeout(() => setCopiedIndex(false), 2000);
+  };
+
+  // Compute actual aggregated metrics from errorsList for selected project
+  // "Do not show metrics when there is insufficient data. Use 'Awaiting error data' instead of fake values."
+  const projectErrorsList = errorsList;
+  const isAwaitingData = projectErrorsList.length === 0 && !loadingErrors;
+
+  const totalOpenErrors = projectErrorsList.filter(e => e.status === 'OPEN').length;
+  const totalCriticalErrors = projectErrorsList.filter(e => e.severity === 'CRITICAL' && e.status === 'OPEN').length;
+  const totalAffectedUsers = projectErrorsList.reduce((acc, curr) => acc + (curr.affectedUsersCount || 0), 0);
+  const totalOccurrences = projectErrorsList.reduce((acc, curr) => acc + (curr.occurrenceCount || 0), 0);
+  
+  // Calculate errors seen in last 24h
+  const errorsTodayCount = projectErrorsList.filter(e => {
+    const lastSeen = new Date(e.lastSeenAt);
+    const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+    return lastSeen > dayAgo;
+  }).length;
+
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <div>
-        <h2 className="text-xl font-display font-semibold text-white">Incident Traces & Logs</h2>
-        <p className="text-xs text-neutral-500 mt-0.5">Comprehensive audit trail of exceptions and runtime errors.</p>
+    <div className="space-y-6 animate-fade-in-up font-sans text-xs">
+      {/* Header section with Project selector */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-xl font-display font-semibold text-white tracking-tight">Real Error Tracking & Grouping</h2>
+          <p className="text-xs text-neutral-500 mt-0.5">Production telemetry engine grouping raw occurrences into deterministic incident buckets.</p>
+        </div>
+
+        {/* Project Dropdown selection */}
+        {projects.length > 0 && (
+          <div className="space-y-1 text-left">
+            <span className="text-[9px] font-mono text-neutral-500 uppercase block tracking-wider">Operational Target</span>
+            <select
+              value={selectedProjectId || ''}
+              onChange={(e) => {
+                setSelectedProjectId(parseInt(e.target.value));
+                setSelectedErrorId(null);
+                setErrorRecord(null);
+              }}
+              className="px-3 py-1.5 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+            >
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.environment})</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
-      <div className="p-6 rounded-2xl border border-neutral-900 bg-neutral-900/10">
-        <div className="overflow-x-auto scrollbar-none">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-neutral-900 bg-neutral-950 font-mono text-[9px] text-neutral-500 uppercase tracking-widest">
-                <th className="p-3">Error Exception</th>
-                <th className="p-3">Endpoint Route</th>
-                <th className="p-3">Count</th>
-                <th className="p-3">Severity</th>
-                <th className="p-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-900 font-sans">
-              {[
-                { err: 'Database query timeout', route: '/api/orders', count: 143, severity: 'CRITICAL', status: 'Active' },
-                { err: 'JWT Verification failure', route: '/auth/verify', count: 28, severity: 'HIGH', status: 'Investigating' },
-                { err: 'Failed to ingest trace webhook', route: '/hooks/vercel', count: 4, severity: 'LOW', status: 'Ignored' }
-              ].map((item, idx) => (
-                <tr key={idx} className="text-neutral-300">
-                  <td className="p-3 font-semibold text-white">{item.err}</td>
-                  <td className="p-3 font-mono text-indigo-400">{item.route}</td>
-                  <td className="p-3 font-mono">{item.count}</td>
-                  <td className="p-3 font-mono text-red-400 font-bold">{item.severity}</td>
-                  <td className="p-3 text-neutral-500">{item.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* Subtabs Navigation */}
+      <div className="border-b border-neutral-900 flex gap-6 text-[10px] font-mono uppercase tracking-wider">
+        {[
+          { id: 'errors', label: 'Errors & Issues' },
+          { id: 'keys', label: 'Secure Ingestion Keys' },
+          { id: 'releases', label: 'Release Tracking' }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`pb-2.5 px-1 border-b-2 font-semibold transition-colors cursor-pointer ${activeTab === tab.id ? 'border-indigo-500 text-white' : 'border-transparent text-neutral-500 hover:text-neutral-300'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {/* TAB CONTENT Switcher */}
+
+      {activeTab === 'errors' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          
+          {/* Main Error list pane (left/center) */}
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Real Top metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {[
+                { label: 'Open Issues', val: isAwaitingData ? 'Awaiting error data' : totalOpenErrors, sub: 'Requires investigation' },
+                { label: 'Critical Errors', val: isAwaitingData ? 'Awaiting error data' : totalCriticalErrors, sub: 'Immediate risk vectors' },
+                { label: 'Errors Today (24h)', val: isAwaitingData ? 'Awaiting error data' : errorsTodayCount, sub: 'Hourly frequency' },
+                { label: 'Error Rate Events', val: isAwaitingData ? 'Awaiting error data' : totalOccurrences, sub: 'Telemetry signals count' },
+                { label: 'Affected Users', val: isAwaitingData ? 'Awaiting error data' : totalAffectedUsers, sub: 'Secure unique hashes' },
+                { label: 'New Issues (30d)', val: isAwaitingData ? 'Awaiting error data' : projectErrorsList.length, sub: 'Recent distinct fingerprints' }
+              ].map((m, idx) => (
+                <div key={idx} className="p-4 rounded-xl border border-neutral-900 bg-neutral-950/40 space-y-1">
+                  <span className="text-[9px] font-mono text-neutral-500 uppercase tracking-wider block">{m.label}</span>
+                  <span className={`font-bold block truncate ${isAwaitingData ? 'text-neutral-500 text-xs font-mono font-normal' : 'text-white text-base'}`}>
+                    {m.val}
+                  </span>
+                  <span className="text-[10px] text-neutral-600 block truncate">{m.sub}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Error Filters */}
+            <div className="p-4 rounded-xl border border-neutral-900 bg-neutral-950/20 flex flex-wrap gap-4 items-center justify-between">
+              <div className="flex flex-wrap gap-3 items-center">
+                <input
+                  type="text"
+                  placeholder="Search error messages..."
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setErrorsPage(1); }}
+                  className="px-3 py-1.5 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 w-48"
+                />
+
+                <select
+                  value={filterSeverity}
+                  onChange={(e) => { setFilterSeverity(e.target.value); setErrorsPage(1); }}
+                  className="px-3 py-1.5 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                >
+                  <option value="">All Severities</option>
+                  <option value="CRITICAL">CRITICAL</option>
+                  <option value="ERROR">ERROR</option>
+                  <option value="WARNING">WARNING</option>
+                  <option value="INFO">INFO</option>
+                  <option value="DEBUG">DEBUG</option>
+                </select>
+
+                <select
+                  value={filterStatus}
+                  onChange={(e) => { setFilterStatus(e.target.value); setErrorsPage(1); }}
+                  className="px-3 py-1.5 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                >
+                  <option value="OPEN">OPEN</option>
+                  <option value="RESOLVED">RESOLVED</option>
+                  <option value="IGNORED">IGNORED</option>
+                </select>
+              </div>
+
+              {loadingErrors && <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin" />}
+            </div>
+
+            {/* Errors List Table */}
+            {errorsList.length === 0 ? (
+              <div className="p-12 text-center border border-neutral-900 rounded-2xl bg-neutral-950/10 space-y-3 font-mono text-neutral-500">
+                <ShieldAlert className="w-8 h-8 text-neutral-700 mx-auto" />
+                <h4 className="text-white font-sans text-sm font-semibold">No issues matching filters found</h4>
+                <p className="max-w-sm mx-auto text-neutral-600">Integrate MeshPilot Error SDK into your source code utilizing an ingestion key to trace production exceptions.</p>
+              </div>
+            ) : (
+              <div className="border border-neutral-900 rounded-2xl overflow-hidden bg-neutral-950/20">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-neutral-900 text-left">
+                    <thead className="bg-neutral-900/40 text-[9px] font-mono text-neutral-500 uppercase">
+                      <tr>
+                        <th className="p-3">Exception / Issue</th>
+                        <th className="p-3">Severity</th>
+                        <th className="p-3 text-center">Occurrences</th>
+                        <th className="p-3 text-center">Users</th>
+                        <th className="p-3">Last Seen</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-900 text-neutral-300">
+                      {errorsList.map((err) => (
+                        <tr 
+                          key={err.id}
+                          onClick={() => {
+                            setSelectedErrorId(err.id);
+                            loadErrorDetail(err.id);
+                          }}
+                          className={`hover:bg-neutral-900/20 transition-colors cursor-pointer ${selectedErrorId === err.id ? 'bg-indigo-950/10 text-white border-l-2 border-indigo-500' : ''}`}
+                        >
+                          <td className="p-3">
+                            <div className="font-semibold block truncate max-w-sm text-white">{err.message}</div>
+                            <span className="text-[10px] text-neutral-500 font-mono block truncate max-w-sm">
+                              {err.exceptionType} • fingerprint: {err.fingerprint.slice(0, 8)}...
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                              err.severity === 'CRITICAL' ? 'bg-red-950/30 text-red-400 border border-red-900/30' :
+                              err.severity === 'ERROR' ? 'bg-orange-950/30 text-orange-400 border border-orange-900/30' :
+                              'bg-neutral-900 text-neutral-400 border border-neutral-800'
+                            }`}>
+                              {err.severity}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-center">{err.occurrenceCount}</td>
+                          <td className="p-3 font-mono text-center">{err.affectedUsersCount}</td>
+                          <td className="p-3 font-mono text-neutral-500 text-[10px]">
+                            {new Date(err.lastSeenAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination footer */}
+                {errorTotalCount > 10 && (
+                  <div className="p-3 bg-neutral-900/30 border-t border-neutral-900 flex justify-between items-center font-mono text-[10px]">
+                    <button
+                      disabled={errorsPage === 1}
+                      onClick={() => setErrorsPage(p => p - 1)}
+                      className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-900 text-neutral-400 disabled:opacity-50"
+                    >
+                      ← Previous
+                    </button>
+                    <span className="text-neutral-500">Page {errorsPage} of {Math.ceil(errorTotalCount / 10)}</span>
+                    <button
+                      disabled={errorsPage >= Math.ceil(errorTotalCount / 10)}
+                      onClick={() => setErrorsPage(p => p + 1)}
+                      className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-900 text-neutral-400 disabled:opacity-50"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right Detail Pane */}
+          <div className="space-y-6">
+            <div className="p-5 rounded-2xl border border-neutral-900 bg-neutral-900/10 min-h-[300px]">
+              {!selectedErrorId ? (
+                <div className="text-center py-16 text-neutral-600 space-y-2">
+                  <Terminal className="w-6 h-6 text-neutral-800 mx-auto" />
+                  <p className="font-mono text-[11px]">Select an error incident trace to load detailed diagnostic diagnostics.</p>
+                </div>
+              ) : loadingDetail ? (
+                <div className="flex flex-col items-center justify-center py-16 text-neutral-500 gap-2 font-mono">
+                  <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
+                  <span>Loading full crashdump telemetry...</span>
+                </div>
+              ) : errorDetail ? (
+                <div className="space-y-5">
+                  <div className="space-y-1.5">
+                    <span className="text-[9px] font-mono text-neutral-500 uppercase block tracking-wider">Crash Trace Details</span>
+                    <h3 className="text-sm font-semibold text-white leading-snug">{errorDetail.message}</h3>
+                    <p className="font-mono text-[10px] text-neutral-400 block">{errorDetail.exceptionType}</p>
+                  </div>
+
+                  {/* Actions Bar */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {errorDetail.status !== 'RESOLVED' ? (
+                      <button
+                        onClick={() => handleUpdateErrorState(errorDetail.id, 'RESOLVED')}
+                        className="px-2 py-1.5 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-900/50 text-emerald-400 text-[10px] font-semibold tracking-wide transition-colors cursor-pointer"
+                      >
+                        Resolve
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleUpdateErrorState(errorDetail.id, 'OPEN')}
+                        className="px-2 py-1.5 rounded-lg bg-indigo-950/40 hover:bg-indigo-900/40 border border-indigo-900/50 text-indigo-400 text-[10px] font-semibold tracking-wide transition-colors cursor-pointer"
+                      >
+                        Reopen
+                      </button>
+                    )}
+
+                    {errorDetail.status !== 'IGNORED' ? (
+                      <button
+                        onClick={() => handleUpdateErrorState(errorDetail.id, 'IGNORED')}
+                        className="px-2 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 text-[10px] font-semibold tracking-wide transition-colors cursor-pointer"
+                      >
+                        Ignore
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleUpdateErrorState(errorDetail.id, 'OPEN')}
+                        className="px-2 py-1.5 rounded-lg bg-indigo-950/40 hover:bg-indigo-900/40 border border-indigo-900/50 text-indigo-400 text-[10px] font-semibold tracking-wide transition-colors cursor-pointer"
+                      >
+                        Reopen
+                      </button>
+                    )}
+
+                    <div className="text-right">
+                      <select
+                        value={errorDetail.assignedTo || ''}
+                        onChange={(e) => handleAssignUser(errorDetail.id, e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg border border-neutral-800 bg-neutral-950 text-[10px] text-neutral-300 font-semibold cursor-pointer"
+                      >
+                        <option value="">Unassigned</option>
+                        <option value="1">Assigned (Me)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Metadata Grid */}
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-neutral-950 rounded-xl border border-neutral-900 text-[10px] text-neutral-400 font-mono">
+                    <div>
+                      <span className="text-[8px] text-neutral-600 uppercase block">Severity</span>
+                      <span className="text-white font-bold">{errorDetail.severity}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-neutral-600 uppercase block">Status</span>
+                      <span className={`font-bold ${errorDetail.status === 'RESOLVED' ? 'text-emerald-400' : 'text-red-400'}`}>{errorDetail.status}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-neutral-600 uppercase block">First Seen</span>
+                      <span className="text-neutral-300">{new Date(errorDetail.firstSeenAt).toLocaleDateString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-neutral-600 uppercase block">Last Seen</span>
+                      <span className="text-neutral-300">{new Date(errorDetail.lastSeenAt).toLocaleDateString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-neutral-600 uppercase block">Occurrence Count</span>
+                      <span className="text-white font-bold">{errorDetail.occurrenceCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-neutral-600 uppercase block">Affected Users</span>
+                      <span className="text-white font-bold">{errorDetail.affectedUsersCount}</span>
+                    </div>
+                  </div>
+
+                  {/* Stack Trace display safely */}
+                  {errorDetail.stackTrace && (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">Stack Frame Dump</label>
+                        <button
+                          onClick={() => handleCopyStack(errorDetail.stackTrace)}
+                          className="px-2 py-0.5 rounded border border-neutral-800 hover:border-neutral-700 bg-neutral-950 font-mono text-[9px] text-neutral-400 hover:text-white"
+                        >
+                          {copiedIndex ? 'Copied!' : 'Copy Stack Trace'}
+                        </button>
+                      </div>
+                      <pre className="p-3 bg-black border border-neutral-900 rounded-xl font-mono text-[9px] text-red-300/80 overflow-auto max-h-48 scrollbar-none leading-relaxed text-left">
+                        {errorDetail.stackTrace}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Chronological events timeline for this group */}
+                  <div className="space-y-2 pt-2 border-t border-neutral-900">
+                    <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">Occurrence Timeline ({timelineTotal})</span>
+                    {loadingTimeline ? (
+                      <span className="text-neutral-600 font-mono text-[9px] block">Refreshing traces...</span>
+                    ) : timelineEvents.length === 0 ? (
+                      <span className="text-neutral-600 font-mono text-[9px] block">No trace instances found.</span>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {timelineEvents.map((evt) => (
+                          <div key={evt.id} className="p-2 rounded bg-neutral-950 border border-neutral-900 text-[10px] text-neutral-400 space-y-1">
+                            <div className="flex justify-between font-mono text-[9px]">
+                              <span className="text-white">{new Date(evt.occurredAt).toLocaleString()}</span>
+                              <span className="text-indigo-400 uppercase">{evt.environment}</span>
+                            </div>
+                            {evt.url && <div className="truncate text-neutral-500 font-mono text-[9px]">URL: {evt.url}</div>}
+                            <div className="flex justify-between text-[9px] font-mono text-neutral-600">
+                              <span>OS: {evt.operatingSystem || '—'} / Browser: {evt.browser || '—'}</span>
+                              {evt.release && <span className="text-neutral-500">Rel: {evt.release}</span>}
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Timeline Pagination */}
+                        {timelineTotal > 5 && (
+                          <div className="flex justify-between items-center text-[9px] font-mono pt-1 text-neutral-500">
+                            <button
+                              disabled={timelinePage === 1}
+                              onClick={() => { setTimelinePage(p => p - 1); loadTimelineEvents(errorDetail.id, timelinePage - 1); }}
+                              className="hover:text-white"
+                            >
+                              ← Prev
+                            </button>
+                            <span>Timeline {timelinePage} / {Math.ceil(timelineTotal / 5)}</span>
+                            <button
+                              disabled={timelinePage >= Math.ceil(timelineTotal / 5)}
+                              onClick={() => { setTimelinePage(p => p + 1); loadTimelineEvents(errorDetail.id, timelinePage + 1); }}
+                              className="hover:text-white"
+                            >
+                              Next →
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB CONTENT: Ingestion Keys */}
+      {activeTab === 'keys' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          
+          {/* Key Creation Form */}
+          <div className="p-5 rounded-2xl border border-neutral-900 bg-neutral-900/10 space-y-4 text-left">
+            <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+              <Key className="w-4 h-4 text-indigo-400" />
+              Generate API SDK Ingestion Key
+            </h3>
+            
+            <p className="text-xs text-neutral-400 leading-relaxed font-sans">
+              MeshPilot secures client-side telemetry ingestion by demanding hash verification of credentials. Never store cleartext key records on your servers.
+            </p>
+
+            <form onSubmit={handleCreateKeySubmit} className="space-y-3 pt-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">Key Name / Description</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Production Web SDK client"
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                  className="block w-full px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingKey}
+                className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-center cursor-pointer transition-colors"
+              >
+                {submittingKey ? 'Hashing...' : 'Generate New Ingestion Key'}
+              </button>
+            </form>
+
+            {/* Ingestion Key Single-reveal Banner */}
+            {generatedRawKey && (
+              <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-900/60 space-y-2 animate-fade-in-up">
+                <span className="text-[8px] font-mono font-bold bg-indigo-500 text-white px-2 py-0.5 rounded uppercase">CRITICAL WARNING</span>
+                <p className="text-[10px] text-neutral-300 leading-relaxed">
+                  This raw ingestion credential will be shown <strong>only once</strong> for security. Copy it now and supply it inside your client headers configuration.
+                </p>
+                
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={generatedRawKey}
+                    className="flex-1 px-3 py-1.5 rounded bg-black font-mono text-[10px] text-indigo-300 border border-neutral-800 focus:outline-none select-all"
+                  />
+                  <button
+                    onClick={() => handleCopyStack(generatedRawKey)}
+                    className="px-3 py-1 rounded bg-indigo-600 text-white text-[10px] font-bold"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Keys list */}
+          <div className="lg:col-span-2 space-y-4">
+            {loadingKeys ? (
+              <div className="text-center py-12 font-mono text-neutral-500">Loading active keys...</div>
+            ) : keysList.length === 0 ? (
+              <div className="p-12 text-center border border-neutral-900 rounded-2xl bg-neutral-950/10 text-neutral-500 font-mono">
+                No telemetry ingestion keys registered for this project.
+              </div>
+            ) : (
+              <div className="border border-neutral-900 rounded-2xl overflow-hidden bg-neutral-950/20">
+                <table className="min-w-full divide-y divide-neutral-900 text-left">
+                  <thead className="bg-neutral-900/40 text-[9px] font-mono text-neutral-500 uppercase">
+                    <tr>
+                      <th className="p-3">Key Identifier</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3">Generated At</th>
+                      <th className="p-3">Last Active</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-900 text-neutral-300">
+                    {keysList.map((key) => (
+                      <tr key={key.id} className="hover:bg-neutral-900/10 transition-colors font-mono">
+                        <td className="p-3 font-sans font-semibold text-white">{key.name}</td>
+                        <td className="p-3">
+                          {key.revokedAt ? (
+                            <span className="text-[9px] text-neutral-500 bg-neutral-900 px-1.5 py-0.5 rounded">REVOKED</span>
+                          ) : (
+                            <span className="text-[9px] text-emerald-400 bg-emerald-950/20 px-1.5 py-0.5 rounded font-bold">ACTIVE</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-[10px] text-neutral-400">{new Date(key.createdAt).toLocaleDateString()}</td>
+                        <td className="p-3 text-[10px] text-neutral-400">
+                          {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : 'Never used'}
+                        </td>
+                        <td className="p-3 text-right">
+                          {!key.revokedAt && (
+                            <button
+                              onClick={() => handleRevokeKey(key.id)}
+                              className="px-2 py-0.5 rounded bg-neutral-900 hover:bg-red-950/20 text-red-400 border border-neutral-800 hover:border-red-900/30 text-[10px] cursor-pointer font-sans font-semibold"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB CONTENT: Release tracking */}
+      {activeTab === 'releases' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          
+          {/* Release registry form */}
+          <div className="p-5 rounded-2xl border border-neutral-900 bg-neutral-900/10 space-y-4 text-left">
+            <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+              <GitCommit className="w-4 h-4 text-indigo-400" />
+              Register Release Build
+            </h3>
+            
+            <p className="text-xs text-neutral-400 leading-relaxed font-sans">
+              Coordinate exceptions with specific version targets to diagnose which code deployment or git commit sha triggered performance degradations.
+            </p>
+
+            <form onSubmit={handleRegisterReleaseSubmit} className="space-y-3 pt-1">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">Version String</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="v1.4.2"
+                  value={newReleaseVersion}
+                  onChange={(e) => setNewReleaseVersion(e.target.value)}
+                  className="block w-full px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">Commit SHA (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="8df294af189b"
+                  value={newReleaseCommit}
+                  onChange={(e) => setNewReleaseCommit(e.target.value)}
+                  className="block w-full px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">Environment</label>
+                <select
+                  value={newReleaseEnv}
+                  onChange={(e) => setNewReleaseEnv(e.target.value)}
+                  className="block w-full px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-950 text-xs text-white focus:outline-none"
+                >
+                  <option value="PRODUCTION">PRODUCTION</option>
+                  <option value="STAGING">STAGING</option>
+                  <option value="DEVELOPMENT">DEVELOPMENT</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingRelease}
+                className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-center cursor-pointer transition-colors"
+              >
+                {submittingRelease ? 'Registering...' : 'Register Release Deployment'}
+              </button>
+            </form>
+          </div>
+
+          {/* Releases list */}
+          <div className="lg:col-span-2 space-y-4">
+            {loadingReleases ? (
+              <div className="text-center py-12 font-mono text-neutral-500">Loading deployments version tracker...</div>
+            ) : releasesList.length === 0 ? (
+              <div className="p-12 text-center border border-neutral-900 rounded-2xl bg-neutral-950/10 text-neutral-500 font-mono">
+                No software release versions registered for this environment yet.
+              </div>
+            ) : (
+              <div className="border border-neutral-900 rounded-2xl overflow-hidden bg-neutral-950/20">
+                <table className="min-w-full divide-y divide-neutral-900 text-left">
+                  <thead className="bg-neutral-900/40 text-[9px] font-mono text-neutral-500 uppercase">
+                    <tr>
+                      <th className="p-3">Version</th>
+                      <th className="p-3">Target Environment</th>
+                      <th className="p-3">Commit Reference</th>
+                      <th className="p-3">Error Traces Included</th>
+                      <th className="p-3">Deployed At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-900 text-neutral-300">
+                    {releasesList.map((rel) => (
+                      <tr key={rel.id} className="hover:bg-neutral-900/10 transition-colors font-mono text-xs">
+                        <td className="p-3 text-white font-bold">{rel.version}</td>
+                        <td className="p-3">
+                          <span className="text-[9px] bg-neutral-900 border border-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded font-bold">
+                            {rel.environment}
+                          </span>
+                        </td>
+                        <td className="p-3 font-mono text-neutral-400">{rel.commitSha || '—'}</td>
+                        <td className="p-3">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${rel.errorCount > 0 ? 'bg-red-950/20 text-red-400' : 'bg-emerald-950/20 text-emerald-400'}`}>
+                            {rel.errorCount} crash traces
+                          </span>
+                        </td>
+                        <td className="p-3 text-[10px] text-neutral-500">{new Date(rel.deployedAt).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
     </div>
   );
 }

@@ -1,11 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { 
-  signInWithEmailAndPassword, 
-  signOut, 
-  createUserWithEmailAndPassword,
-  onAuthStateChanged
-} from 'firebase/auth';
-import { auth } from '../lib/firebase.ts';
+import { useAuth as useClerkAuth, useSignIn as useClerkSignIn } from '@clerk/clerk-react';
 
 export type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT' | 'ANALYST';
 
@@ -33,12 +27,17 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [adminUser, setAdminUser] = useState<AdminProfile | null>(null);
   const [adminLoading, setAdminLoading] = useState(true);
 
+  const { isLoaded: authLoaded, sessionId, getToken, signOut: clerkSignOut } = useClerkAuth();
+  const { isLoaded: signInLoaded, signIn, setActive: setSignInActive } = useClerkSignIn();
+
   // Monitor auth state changes to keep admin session synced
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
+    if (!authLoaded) return;
+
+    const syncAdmin = async () => {
+      if (sessionId) {
         try {
-          const idToken = await fbUser.getIdToken();
+          const idToken = await getToken();
           const res = await fetch('/api/user/profile', {
             headers: { 'Authorization': `Bearer ${idToken}` }
           });
@@ -50,17 +49,18 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
             if (adminRoles.includes(role)) {
               setAdminUser({
                 id: String(data.user.id),
-                name: data.user.name || fbUser.displayName || 'Admin',
-                email: data.user.email || fbUser.email || '',
+                name: data.user.name || 'Admin',
+                email: data.user.email || '',
                 avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(data.user.name || 'Admin')}`,
                 role: role,
                 createdAt: data.user.createdAt,
                 lastActive: new Date().toISOString(),
               });
             } else {
-              // Not an admin, clear admin state
               setAdminUser(null);
             }
+          } else {
+            setAdminUser(null);
           }
         } catch (e) {
           console.error('Error recovering admin user profile:', e);
@@ -70,18 +70,22 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         setAdminUser(null);
       }
       setAdminLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
-  }, []);
+    syncAdmin();
+  }, [authLoaded, sessionId, getToken]);
 
   const adminLogin = async (email: string, password: string): Promise<AdminProfile> => {
+    if (!signInLoaded) throw new Error('Clerk is not fully initialized.');
     try {
-      let userCredential;
+      let result;
       try {
-        // Try to log in directly via Firebase
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
-      } catch (fbErr: any) {
+        // Try to log in directly via Clerk
+        result = await signIn.create({
+          identifier: email,
+          password,
+        });
+      } catch (clerkErr: any) {
         // If user doesn't exist, check if it's one of our seeded admins with default pass
         const seedAdmins = [
           { email: 'superadmin@meshpilot.com', name: 'Sarah Connor', role: 'SUPER_ADMIN' },
@@ -92,54 +96,74 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         
         const matchedSeed = seedAdmins.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
         if (matchedSeed && password === 'admin123') {
-          // Auto create seed admin in Firebase
-          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          // Auto create seed admin in Clerk via our server API endpoint
+          const createRes = await fetch('/api/admin/create-seed-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+          if (!createRes.ok) {
+            const errData = await createRes.json();
+            throw new Error(errData.error || 'Failed to auto-provision seed admin user in Clerk.');
+          }
+          // Now sign in
+          result = await signIn.create({
+            identifier: email,
+            password,
+          });
         } else {
-          throw fbErr;
+          throw clerkErr;
         }
       }
 
-      const idToken = await userCredential.user.getIdToken();
-      
-      // Load user profile from DB to verify role
-      const res = await fetch('/api/user/profile', {
-        headers: { 'Authorization': `Bearer ${idToken}` }
-      });
-      
-      if (!res.ok) {
-        throw new Error('Failed to synchronize admin profile with server');
+      if (result.status === 'complete') {
+        await setSignInActive({ session: result.createdSessionId });
+        
+        // Fetch token and profile
+        const idToken = await getToken();
+        if (!idToken) throw new Error('Clerk verification token could not be fetched.');
+
+        const res = await fetch('/api/user/profile', {
+          headers: { 'Authorization': `Bearer ${idToken}` }
+        });
+        
+        if (!res.ok) {
+          throw new Error('Failed to synchronize admin profile with server');
+        }
+
+        const data = await res.json();
+        const role = data.user.role as AdminRole;
+        const adminRoles: AdminRole[] = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'];
+
+        if (!adminRoles.includes(role)) {
+          await clerkSignOut();
+          throw new Error('Access Denied: You do not have administrative privileges.');
+        }
+
+        const profile: AdminProfile = {
+          id: String(data.user.id),
+          name: data.user.name || 'Admin',
+          email: data.user.email,
+          avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(data.user.name || 'Admin')}`,
+          role: role,
+          createdAt: data.user.createdAt,
+          lastActive: new Date().toISOString(),
+        };
+
+        setAdminUser(profile);
+        return profile;
+      } else {
+        throw new Error(`Sign in status: ${result.status}`);
       }
-
-      const data = await res.json();
-      const role = data.user.role as AdminRole;
-      const adminRoles: AdminRole[] = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'];
-
-      if (!adminRoles.includes(role)) {
-        await signOut(auth);
-        throw new Error('Access Denied: You do not have administrative privileges.');
-      }
-
-      const profile: AdminProfile = {
-        id: String(data.user.id),
-        name: data.user.name || 'Admin',
-        email: data.user.email,
-        avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(data.user.name || 'Admin')}`,
-        role: role,
-        createdAt: data.user.createdAt,
-        lastActive: new Date().toISOString(),
-      };
-
-      setAdminUser(profile);
-      return profile;
     } catch (error: any) {
       console.error('Admin Login error:', error);
-      throw new Error(error.message || 'Administrative Authentication failed.');
+      throw new Error(error.errors?.[0]?.message || error.message || 'Administrative Authentication failed.');
     }
   };
 
   const adminLogout = async () => {
     try {
-      await signOut(auth);
+      await clerkSignOut();
       setAdminUser(null);
     } catch (error) {
       console.error('Admin Signout error:', error);

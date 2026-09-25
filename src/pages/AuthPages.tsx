@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext';
 import { useRouter, Link } from '../components/Router';
 import { Shield, Eye, EyeOff, Lock, Mail, User, Check, ArrowLeft, Sparkles, CheckCircle2 } from 'lucide-react';
 
-// Help helper for password strength
 function getPasswordStrength(password: string): { score: number; label: string; color: string } {
   if (!password) return { score: 0, label: 'None', color: 'bg-neutral-800' };
   let score = 0;
@@ -41,11 +40,7 @@ export function LoginPage() {
       await login(email, password);
       navigate('/dashboard');
     } catch (err: any) {
-      if (err.message && err.message.includes('operation-not-allowed')) {
-        setError("Email/Password provider is disabled in your Firebase Console. Please go to Firebase Console > Authentication > Sign-in method, and enable 'Email/Password' to log in, OR use the Google Single Sign-on option below.");
-      } else {
-        setError(err.message || 'Authentication failed. Please verify credentials.');
-      }
+      setError(err.message || 'Authentication failed. Please verify credentials.');
     } finally {
       setSubmitting(false);
     }
@@ -56,11 +51,9 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await loginWithGoogle();
-      navigate('/dashboard');
     } catch (err: any) {
       console.error('Google Auth error:', err);
       setError(err.message || 'Google Single Sign-on failed.');
-    } finally {
       setSubmitting(false);
     }
   };
@@ -219,7 +212,7 @@ export function LoginPage() {
 }
 
 export function SignUpPage() {
-  const { signup, loginWithGoogle } = useAuth();
+  const { signup, loginWithGoogle, verifyEmailCode, signUpSession } = useAuth();
   const { navigate } = useRouter();
 
   const [name, setName] = useState('');
@@ -229,6 +222,12 @@ export function SignUpPage() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Email verification states
+  const [showVerification, setShowVerification] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
 
   const passwordStrength = getPasswordStrength(password);
 
@@ -254,15 +253,32 @@ export function SignUpPage() {
     setSubmitting(true);
     try {
       await signup(name, email, password);
-      navigate('/dashboard');
-    } catch (err: any) {
-      if (err.message && err.message.includes('operation-not-allowed')) {
-        setError("Email/Password registration is disabled in your Firebase Console. Please go to Firebase Console > Authentication > Sign-in method, and enable 'Email/Password' to register, OR use the Google Single Sign-on option below.");
+      
+      // If Clerk has unverified fields, we show the verification overlay
+      if (signUpSession && signUpSession.unverifiedFields && signUpSession.unverifiedFields.includes('email_address')) {
+        setShowVerification(true);
       } else {
-        setError(err.message || 'Registration failed.');
+        navigate('/dashboard');
       }
+    } catch (err: any) {
+      setError(err.message || 'Registration failed.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerificationError('');
+    setVerifyingCode(true);
+
+    try {
+      await verifyEmailCode(verificationCode);
+      navigate('/dashboard');
+    } catch (err: any) {
+      setVerificationError(err.message || 'Email verification code is incorrect. Please try again.');
+    } finally {
+      setVerifyingCode(false);
     }
   };
 
@@ -271,14 +287,66 @@ export function SignUpPage() {
     setSubmitting(true);
     try {
       await loginWithGoogle();
-      navigate('/dashboard');
     } catch (err: any) {
       console.error('Google Auth error during signup:', err);
       setError(err.message || 'Google Single Sign-on failed.');
-    } finally {
       setSubmitting(false);
     }
   };
+
+  if (showVerification) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-950/40 border border-indigo-900/45 flex items-center justify-center mx-auto mb-6 text-indigo-400">
+            <Shield className="w-6 h-6 animate-pulse" />
+          </div>
+          <h2 className="text-3xl font-display font-semibold text-white tracking-tight">
+            Email Verification Code
+          </h2>
+          <p className="mt-2 text-xs text-neutral-400">
+            We have dispatched a 6-digit verification code to <b>{email}</b>.
+          </p>
+        </div>
+
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+          <div className="bg-neutral-900/30 backdrop-blur-md border border-neutral-900 py-8 px-4 shadow-xl rounded-2xl sm:px-10">
+            {verificationError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-950/30 border border-red-900/50 text-xs text-red-400 font-mono flex items-start gap-2">
+                <span>⚠️</span>
+                <span>{verificationError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyCodeSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono text-neutral-500 uppercase mb-1.5">
+                  Verification Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="123456"
+                  maxLength={6}
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value)}
+                  className="block w-full tracking-[0.5em] text-center font-bold text-lg py-3 rounded-xl border border-neutral-800 bg-neutral-950 text-white placeholder-neutral-700 focus:outline-none focus:border-indigo-500/60"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={verifyingCode}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-xl shadow-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                {verifyingCode ? 'Verifying authentication code...' : 'Confirm Verification Code'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
@@ -473,17 +541,29 @@ export function SignUpPage() {
 }
 
 export function ForgotPasswordPage() {
+  const { forgotPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSuccess(true);
+    setError('');
+    setSubmitting(true);
+    try {
+      await forgotPassword(email);
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to dispatch reset code.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 font-sans">
         <Link to="/login" className="inline-flex items-center gap-1.5 text-xs font-mono text-neutral-500 hover:text-white mb-6">
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Return to login</span>
@@ -491,17 +571,24 @@ export function ForgotPasswordPage() {
         <h2 className="text-3xl font-display font-semibold text-white tracking-tight">
           Recover Password
         </h2>
-        <p className="mt-2 text-xs text-neutral-400">
+        <p className="mt-2 text-xs text-neutral-400 font-sans">
           Enter your registered email below to dispatch a reset sequence.
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="bg-neutral-900/30 backdrop-blur-md border border-neutral-900 py-8 px-4 shadow-xl rounded-2xl sm:px-10">
+          {error && (
+            <div className="mb-4 p-3 rounded-xl bg-red-950/30 border border-red-900/50 text-xs text-red-400 font-mono flex items-start gap-2">
+              <span>⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
           {success ? (
             <div className="space-y-4 animate-fade-in-up">
               <div className="p-4 rounded-xl bg-indigo-950/30 border border-indigo-900/40 text-xs font-mono text-indigo-300">
-                🚀 A telemetry password recovery link has been dispatched to <b>{email}</b>. Follow instructions to authenticate.
+                🚀 A telemetry password recovery link has been dispatched to <b>{email}</b>. Use the received verification code below.
               </div>
               <Link
                 to="/reset-password"
@@ -534,9 +621,10 @@ export function ForgotPasswordPage() {
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors cursor-pointer"
+                disabled={submitting}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors cursor-pointer disabled:opacity-50"
               >
-                Dispatch Reset Sequence
+                {submitting ? 'Dispatching...' : 'Dispatch Reset Sequence'}
               </button>
             </form>
           )}
@@ -547,15 +635,23 @@ export function ForgotPasswordPage() {
 }
 
 export function ResetPasswordPage() {
+  const { resetPassword } = useAuth();
   const { navigate } = useRouter();
+  const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!code) {
+      setError('Verification code is required.');
+      return;
+    }
 
     if (password.length < 8) {
       setError('Password must be at least 8 characters long.');
@@ -567,10 +663,18 @@ export function ResetPasswordPage() {
       return;
     }
 
-    setSuccess(true);
-    setTimeout(() => {
-      navigate('/login');
-    }, 2000);
+    setSubmitting(true);
+    try {
+      await resetPassword(code, password);
+      setSuccess(true);
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to establish new credentials.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -579,7 +683,7 @@ export function ResetPasswordPage() {
         <h2 className="text-3xl font-display font-semibold text-white tracking-tight text-center">
           Reset Password
         </h2>
-        <p className="mt-2 text-xs text-neutral-400 text-center">
+        <p className="mt-2 text-xs text-neutral-400 text-center font-sans">
           Establish new cluster credentials for your dashboard.
         </p>
       </div>
@@ -598,6 +702,20 @@ export function ResetPasswordPage() {
             </div>
           ) : (
             <form className="space-y-4" onSubmit={handleSubmit}>
+              <div>
+                <label className="block text-[10px] font-mono text-neutral-500 uppercase mb-1.5">
+                  6-Digit Reset Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="123456"
+                  className="block w-full px-3 py-2.5 rounded-xl border border-neutral-800 bg-neutral-950 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                />
+              </div>
+
               <div>
                 <label className="block text-[10px] font-mono text-neutral-500 uppercase mb-1.5">
                   New Password
@@ -628,9 +746,10 @@ export function ResetPasswordPage() {
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors cursor-pointer"
+                disabled={submitting}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors cursor-pointer disabled:opacity-50"
               >
-                Save New Credentials
+                {submitting ? 'Saving...' : 'Save New Credentials'}
               </button>
             </form>
           )}
@@ -660,7 +779,7 @@ export function VerifyEmailPage() {
         <h2 className="text-3xl font-display font-semibold text-white tracking-tight">
           Email Verification
         </h2>
-        <p className="mt-2 text-xs text-neutral-400">
+        <p className="mt-2 text-xs text-neutral-400 font-sans">
           Authenticating communication gateway lines with MeshPilot core nodes.
         </p>
 

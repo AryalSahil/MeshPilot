@@ -6,6 +6,8 @@ import {
   HelpCircle, Heart, RefreshCw, Send, ShieldAlert, Wifi, Globe2
 } from 'lucide-react';
 
+import { ClerkProvider, AuthenticateWithRedirectCallback } from '@clerk/clerk-react';
+
 // Import Router utilities
 import { RouterProvider, useRouter, Link } from './components/Router';
 
@@ -205,6 +207,8 @@ function AppLayout() {
         return <ResetPasswordPage />;
       case '/verify-email':
         return <VerifyEmailPage />;
+      case '/sso-callback':
+        return <AuthenticateWithRedirectCallback />;
 
       // Public Marketing pages
       case '/':
@@ -244,7 +248,7 @@ function AppLayout() {
   };
 
   const isDashboardRoute = path.startsWith('/dashboard');
-  const isAuthRoute = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email'].includes(path);
+  const isAuthRoute = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/sso-callback'].includes(path);
   const isAdminRoute = path.startsWith('/admin');
 
   if (isDashboardRoute || isAuthRoute || isAdminRoute || loading || adminLoading) {
@@ -703,15 +707,33 @@ function AppLayout() {
 
 // Top level App wrapper with provider
 export default function App() {
+  const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
+
+  if (!CLERK_PUBLISHABLE_KEY) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center font-mono text-xs text-neutral-400 p-6 max-w-md mx-auto text-center gap-4">
+        <div className="text-xl font-sans font-bold text-white flex items-center gap-2">
+          <Lock className="w-5 h-5 text-indigo-500" />
+          <span>Configuration Required</span>
+        </div>
+        <p className="font-sans leading-relaxed text-neutral-500">
+          Clerk Publishable Key is missing. Please configure <code>VITE_CLERK_PUBLISHABLE_KEY</code> in your environment variables to activate the security layers.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <RouterProvider>
-      <AuthProvider>
-        <AdminAuthProvider>
-          <DashboardProvider>
-            <AppLayout />
-          </DashboardProvider>
-        </AdminAuthProvider>
-      </AuthProvider>
-    </RouterProvider>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/login">
+      <RouterProvider>
+        <AuthProvider>
+          <AdminAuthProvider>
+            <DashboardProvider>
+              <AppLayout />
+            </DashboardProvider>
+          </AdminAuthProvider>
+        </AuthProvider>
+      </RouterProvider>
+    </ClerkProvider>
   );
 }

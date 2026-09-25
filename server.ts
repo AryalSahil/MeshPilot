@@ -25,11 +25,35 @@ import {
 
 // Monitoring & DB imports
 import { db } from './src/db/index.ts';
-import { monitors, monitorChecks, incidents, alertChannels, alertRules, notifications, usageEvents } from './src/db/schema.ts';
+import {
+  projects,
+  monitors,
+  monitorChecks,
+  incidents,
+  alertChannels,
+  alertRules,
+  notifications,
+  usageEvents,
+  apiMonitors,
+  apiMonitorChecks,
+  errors,
+  errorEvents,
+  projectIngestionKeys,
+  releases
+} from './src/db/schema.ts';
 import { processMonitorCheck } from './src/lib/monitoring/processMonitor.ts';
+import { processApiMonitorCheck } from './src/lib/monitoring/checkApiMonitor.ts';
+import {
+  calculateFingerprint,
+  sanitizeSensitiveData,
+  parseUserAgent,
+  hashKey,
+  generateRawKey
+} from './src/lib/monitoring/errorTracking.ts';
+import crypto from 'crypto';
 import { getProjectUptimeStats, recalculateProjectHealthScores } from './src/lib/monitoring/calculateHealth.ts';
 import { validateProjectLimit, validateMonitorLimits } from './src/lib/monitoring/planLimits.ts';
-import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, lte, sql, like } from 'drizzle-orm';
 
 dotenv.config();
 
@@ -41,6 +65,238 @@ app.use(express.json());
 // --- PUBLIC & HEALH PATHS ---
 app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
+});
+
+// Create seed admin user in Clerk
+import { createClerkClient } from '@clerk/backend';
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+
+app.post('/api/admin/create-seed-user', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Missing email or password' });
+    }
+
+    const seedAdmins = [
+      { email: 'superadmin@meshpilot.com', name: 'Sarah Connor', role: 'SUPER_ADMIN' },
+      { email: 'admin@meshpilot.com', name: 'John Doe', role: 'ADMIN' },
+      { email: 'support@meshpilot.com', name: 'Marcus Wright', role: 'SUPPORT' },
+      { email: 'analyst@meshpilot.com', name: 'Kyle Reese', role: 'ANALYST' }
+    ];
+
+    const matchedSeed = seedAdmins.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
+    if (!matchedSeed || password !== 'admin123') {
+      return res.status(403).json({ error: 'Invalid seed admin credentials' });
+    }
+
+    // Check if user already exists in Clerk
+    const usersList = await clerkClient.users.getUserList({ emailAddress: [email] });
+    if (usersList.data.length > 0) {
+      return res.json({ success: true, message: 'User already exists in Clerk', userId: usersList.data[0].id });
+    }
+
+    // Create the seed admin user in Clerk
+    const firstName = matchedSeed.name.split(' ')[0];
+    const lastName = matchedSeed.name.split(' ')[1] || '';
+    const newUser = await clerkClient.users.createUser({
+      emailAddress: [email],
+      password: password,
+      firstName,
+      lastName,
+      skipPasswordRequirement: false,
+    });
+
+    return res.status(201).json({ success: true, message: 'User created in Clerk', userId: newUser.id });
+  } catch (err: any) {
+    console.error('Error creating seed admin in Clerk:', err);
+    return res.status(500).json({ error: err.message || 'Failed to create seed admin in Clerk' });
+  }
+});
+
+// Secure error ingestion API
+app.post('/api/errors/ingest', async (req, res) => {
+  try {
+    const rawPayload = req.body;
+    const projectKey = rawPayload.projectKey || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
+    
+    if (!projectKey) {
+      return res.status(401).json({ error: 'Missing secure projectKey ingestion parameter' });
+    }
+
+    const keyHashed = hashKey(projectKey);
+
+    // Verify key in PG
+    const ingestionKey = await db.query.projectIngestionKeys.findFirst({
+      where: and(
+        eq(projectIngestionKeys.keyHash, keyHashed),
+        sql`revoked_at IS NULL`
+      )
+    });
+
+    if (!ingestionKey) {
+      return res.status(401).json({ error: 'Invalid or revoked project ingestion key' });
+    }
+
+    const {
+      environment = 'production',
+      message,
+      exceptionType = 'Error',
+      stackTrace,
+      url,
+      endpoint,
+      method = 'GET',
+      statusCode,
+      release,
+      timestamp,
+      userIdentifier
+    } = rawPayload;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message parameter is required for error tracking' });
+    }
+
+    // Lookup project to find organizationId
+    const project = await db.query.projects.findFirst({
+      where: eq(projects.id, ingestionKey.projectId)
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Associated project not found' });
+    }
+
+    // Sanitize message & trace
+    const cleanMessage = sanitizeSensitiveData(message);
+    const cleanStackTrace = stackTrace ? sanitizeSensitiveData(stackTrace) : null;
+    const cleanUrl = url ? sanitizeSensitiveData(url) : null;
+    const cleanEndpoint = endpoint ? sanitizeSensitiveData(endpoint) : null;
+
+    // Deterministic fingerprinting
+    const fingerprint = calculateFingerprint({
+      exceptionType,
+      message: cleanMessage,
+      stackTrace: cleanStackTrace || undefined,
+      endpoint: cleanEndpoint || undefined
+    });
+
+    const now = new Date();
+    const occurredAtDate = timestamp ? new Date(timestamp) : now;
+
+    // Parse user agent
+    const userAgentStr = req.headers['user-agent'] || '';
+    const { browser, os, device } = parseUserAgent(userAgentStr);
+
+    // Securely hash userIdentifier to protect PII
+    const userIdentifierHash = userIdentifier 
+      ? crypto.createHash('sha256').update(String(userIdentifier)).digest('hex')
+      : null;
+
+    // Check if error already exists under this fingerprint and project
+    let errorRecord = await db.query.errors.findFirst({
+      where: and(
+        eq(errors.projectId, project.id),
+        eq(errors.fingerprint, fingerprint)
+      )
+    });
+
+    if (errorRecord) {
+      // Check if user is newly affected
+      let newlyAffected = 0;
+      if (userIdentifierHash) {
+        const previousEvent = await db.query.errorEvents.findFirst({
+          where: and(
+            eq(errorEvents.errorId, errorRecord.id),
+            eq(errorEvents.userIdentifierHash, userIdentifierHash)
+          )
+        });
+        if (!previousEvent) {
+          newlyAffected = 1;
+        }
+      }
+
+      // Update existing error
+      const updatedList = await db.update(errors)
+        .set({
+          lastSeenAt: now,
+          occurrenceCount: errorRecord.occurrenceCount + 1,
+          affectedUsersCount: errorRecord.affectedUsersCount + newlyAffected,
+          message: cleanMessage, // update message in case of minor variations
+          status: errorRecord.status === 'RESOLVED' ? 'OPEN' : errorRecord.status, // reopen resolved if it occurs again
+          updatedAt: now
+        })
+        .where(eq(errors.id, errorRecord.id))
+        .returning();
+      
+      errorRecord = updatedList[0];
+    } else {
+      // Create new error group
+      const insertedList = await db.insert(errors)
+        .values({
+          projectId: project.id,
+          organizationId: project.organizationId!,
+          environment: environment.toUpperCase(),
+          fingerprint,
+          message: cleanMessage,
+          exceptionType,
+          stackTrace: cleanStackTrace,
+          severity: 'ERROR',
+          source: (cleanUrl || cleanEndpoint) ? 'BROWSER' : 'SERVER',
+          firstSeenAt: occurredAtDate,
+          lastSeenAt: occurredAtDate,
+          occurrenceCount: 1,
+          affectedUsersCount: userIdentifier ? 1 : 0,
+          status: 'OPEN'
+        })
+        .returning();
+
+      errorRecord = insertedList[0];
+    }
+
+    // Insert structured event
+    await db.insert(errorEvents)
+      .values({
+        errorId: errorRecord.id,
+        projectId: project.id,
+        organizationId: project.organizationId!,
+        environment: environment.toUpperCase(),
+        message: cleanMessage,
+        stackTrace: cleanStackTrace,
+        exceptionType,
+        userIdentifierHash,
+        url: cleanUrl,
+        endpoint: cleanEndpoint,
+        httpMethod: method.toUpperCase(),
+        httpStatus: statusCode || null,
+        browser,
+        operatingSystem: os,
+        device,
+        release: release || null,
+        metadata: JSON.stringify(sanitizeSensitiveData({
+          ip: req.ip,
+          headers: {
+            host: req.headers.host,
+            accept: req.headers.accept
+          }
+        })),
+        occurredAt: occurredAtDate
+      });
+
+    // Update lastUsedAt on ingestion key
+    await db.update(projectIngestionKeys)
+      .set({ lastUsedAt: now })
+      .where(eq(projectIngestionKeys.id, ingestionKey.id));
+
+    res.status(201).json({
+      success: true,
+      errorId: errorRecord.id,
+      fingerprint,
+      status: errorRecord.status
+    });
+
+  } catch (err: any) {
+    console.error('[INGEST_ERROR] API Exception:', err);
+    res.status(500).json({ error: err.message || 'Internal error during ingestion processing' });
+  }
 });
 
 // --- AUTHENTICATED USER ENDPOINTS ---
@@ -171,7 +427,7 @@ app.get('/api/projects/:id/metrics', requireAuth, async (req: AuthRequest, res) 
   }
 });
 
-// Get project errors
+// Get project errors (Filtered, Paginated)
 app.get('/api/projects/:id/errors', requireAuth, async (req: AuthRequest, res) => {
   try {
     const user = req.dbUser;
@@ -181,14 +437,821 @@ app.get('/api/projects/:id/errors', requireAuth, async (req: AuthRequest, res) =
     const project = await getProjectById(projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    // Verify membership
     const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
     if (!belongs) return res.status(403).json({ error: 'Forbidden' });
 
-    const errors = await getProjectErrorsFromDb(projectId);
-    res.json(errors);
+    const { environment, severity, status, search, page = '1', limit = '20' } = req.query;
+    const pageNum = parseInt(page as string) || 1;
+    const limitNum = parseInt(limit as string) || 20;
+    const offset = (pageNum - 1) * limitNum;
+
+    let conditions: any[] = [eq(errors.projectId, projectId)];
+    if (environment) conditions.push(eq(errors.environment, String(environment).toUpperCase()));
+    if (severity) conditions.push(eq(errors.severity, String(severity).toUpperCase()));
+    if (status) conditions.push(eq(errors.status, String(status).toUpperCase()));
+    if (search) conditions.push(like(errors.message, `%${search}%`));
+
+    const errorsList = await db.select()
+      .from(errors)
+      .where(and(...conditions))
+      .orderBy(desc(errors.lastSeenAt))
+      .limit(limitNum)
+      .offset(offset);
+
+    const totalCountResult = await db.select({ count: sql<number>`count(*)::int` })
+      .from(errors)
+      .where(and(...conditions));
+
+    const total = totalCountResult[0]?.count || 0;
+
+    res.json({ errors: errorsList, page: pageNum, limit: limitNum, total });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch project errors' });
+  }
+});
+
+// Get individual error details
+app.get('/api/errors/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const errorId = parseInt(req.params.id);
+    const errorRecord = await db.query.errors.findFirst({
+      where: eq(errors.id, errorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!errorRecord || !errorRecord.project) {
+      return res.status(404).json({ error: 'Error not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, errorRecord.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    res.json(errorRecord);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch error details' });
+  }
+});
+
+// Update error status or assignment
+app.patch('/api/errors/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const errorId = parseInt(req.params.id);
+    const errorRecord = await db.query.errors.findFirst({
+      where: eq(errors.id, errorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!errorRecord || !errorRecord.project) {
+      return res.status(404).json({ error: 'Error not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, errorRecord.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const { status, assignedTo } = req.body;
+    const updates: any = {};
+    if (status !== undefined) {
+      const allowedStatus = ['OPEN', 'RESOLVED', 'IGNORED'];
+      if (!allowedStatus.includes(String(status).toUpperCase())) {
+        return res.status(400).json({ error: 'Invalid status parameter' });
+      }
+      updates.status = String(status).toUpperCase();
+    }
+    if (assignedTo !== undefined) {
+      updates.assignedTo = assignedTo ? parseInt(assignedTo) : null;
+    }
+
+    updates.updatedAt = new Date();
+
+    const updated = await db.update(errors)
+      .set(updates)
+      .where(eq(errors.id, errorId))
+      .returning();
+
+    await logAdminActionInDb(
+      user.id,
+      user.email,
+      'UPDATE_ERROR_STATE',
+      `Error group #${errorId} was updated to status "${updates.status || errorRecord.status}"`,
+      req.ip
+    );
+
+    res.json(updated[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to update error' });
+  }
+});
+
+// Get individual error events timeline with pagination
+app.get('/api/errors/:id/events', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const errorId = parseInt(req.params.id);
+    const errorRecord = await db.query.errors.findFirst({
+      where: eq(errors.id, errorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!errorRecord || !errorRecord.project) {
+      return res.status(404).json({ error: 'Error not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, errorRecord.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+
+    const eventsList = await db.select()
+      .from(errorEvents)
+      .where(eq(errorEvents.errorId, errorId))
+      .orderBy(desc(errorEvents.occurredAt))
+      .limit(limit)
+      .offset(offset);
+
+    const totalCountResult = await db.select({ count: sql<number>`count(*)::int` })
+      .from(errorEvents)
+      .where(eq(errorEvents.errorId, errorId));
+
+    const total = totalCountResult[0]?.count || 0;
+
+    res.json({ events: eventsList, page, limit, total });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch error events' });
+  }
+});
+
+// Get project error rates over time
+app.get('/api/projects/:projectId/error-rate', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const projectId = parseInt(req.params.projectId);
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const { days = '30' } = req.query;
+    const daysNum = parseInt(days as string) || 30;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - daysNum);
+
+    const events = await db.select({
+      day: sql<string>`date_trunc('day', occurred_at)::text`,
+      count: sql<number>`count(*)::int`
+    })
+    .from(errorEvents)
+    .where(and(
+      eq(errorEvents.projectId, projectId),
+      gte(errorEvents.occurredAt, cutoff)
+    ))
+    .groupBy(sql`date_trunc('day', occurred_at)`)
+    .orderBy(sql`date_trunc('day', occurred_at)`);
+
+    res.json(events);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to compile error rate data' });
+  }
+});
+
+// Get project ingestion keys
+app.get('/api/projects/:projectId/ingestion-keys', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const projectId = parseInt(req.params.projectId);
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const list = await db.select({
+      id: projectIngestionKeys.id,
+      name: projectIngestionKeys.name,
+      createdAt: projectIngestionKeys.createdAt,
+      lastUsedAt: projectIngestionKeys.lastUsedAt,
+      revokedAt: projectIngestionKeys.revokedAt
+    })
+    .from(projectIngestionKeys)
+    .where(eq(projectIngestionKeys.projectId, projectId))
+    .orderBy(desc(projectIngestionKeys.createdAt));
+
+    res.json(list);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch project ingestion keys' });
+  }
+});
+
+// Create secure project ingestion key
+app.post('/api/projects/:projectId/ingestion-keys', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const projectId = parseInt(req.params.projectId);
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Key name is required' });
+
+    const rawKey = generateRawKey();
+    const keyHashed = hashKey(rawKey);
+
+    const inserted = await db.insert(projectIngestionKeys)
+      .values({
+        projectId,
+        name,
+        keyHash: keyHashed
+      })
+      .returning();
+
+    await logAdminActionInDb(
+      user.id,
+      user.email,
+      'CREATE_INGESTION_KEY',
+      `Created key "${name}" for project ${project.name}`,
+      req.ip
+    );
+
+    res.status(201).json({
+      id: inserted[0].id,
+      name: inserted[0].name,
+      createdAt: inserted[0].createdAt,
+      rawKey // returned ONLY ONCE upon creation
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to generate ingestion key' });
+  }
+});
+
+// Revoke ingestion key
+app.post('/api/ingestion-keys/:id/revoke', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const keyId = parseInt(req.params.id);
+    const keyRecord = await db.query.projectIngestionKeys.findFirst({
+      where: eq(projectIngestionKeys.id, keyId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!keyRecord || !keyRecord.project) {
+      return res.status(404).json({ error: 'Ingestion key not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, keyRecord.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const updated = await db.update(projectIngestionKeys)
+      .set({ revokedAt: new Date() })
+      .where(eq(projectIngestionKeys.id, keyId))
+      .returning();
+
+    await logAdminActionInDb(
+      user.id,
+      user.email,
+      'REVOKE_INGESTION_KEY',
+      `Revoked key "${keyRecord.name}" for project ${keyRecord.project.name}`,
+      req.ip
+    );
+
+    res.json(updated[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to revoke ingestion key' });
+  }
+});
+
+// List releases
+app.get('/api/projects/:projectId/releases', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const projectId = parseInt(req.params.projectId);
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const list = await db.select()
+      .from(releases)
+      .where(eq(releases.projectId, projectId))
+      .orderBy(desc(releases.deployedAt));
+
+    const richList = await Promise.all(list.map(async (rel) => {
+      const errorCountResult = await db.select({ count: sql<number>`count(*)::int` })
+        .from(errorEvents)
+        .where(and(
+          eq(errorEvents.projectId, projectId),
+          eq(errorEvents.release, rel.version)
+        ));
+
+      return {
+        ...rel,
+        errorCount: errorCountResult[0]?.count || 0
+      };
+    }));
+
+    res.json(richList);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch releases' });
+  }
+});
+
+// Create release
+app.post('/api/projects/:projectId/releases', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const projectId = parseInt(req.params.projectId);
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const { version, environment, commitSha, deploymentId } = req.body;
+    if (!version) return res.status(400).json({ error: 'Version is required' });
+
+    const inserted = await db.insert(releases)
+      .values({
+        projectId,
+        version,
+        environment: environment || 'PRODUCTION',
+        commitSha,
+        deploymentId,
+        deployedAt: new Date()
+      })
+      .returning();
+
+    res.status(201).json(inserted[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to register release' });
+  }
+});
+
+// --- REAL API MONITORING ENDPOINTS ---
+
+// List API Monitors for a project
+app.get('/api/projects/:projectId/api-monitors', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const projectId = parseInt(req.params.projectId);
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const list = await db.select().from(apiMonitors).where(eq(apiMonitors.projectId, projectId)).orderBy(desc(apiMonitors.createdAt));
+    
+    // Add uptime calculations
+    const listWithStats = await Promise.all(list.map(async (mon) => {
+      const checks = await db.select({ status: apiMonitorChecks.status })
+        .from(apiMonitorChecks)
+        .where(eq(apiMonitorChecks.apiMonitorId, mon.id));
+      
+      const total = checks.length;
+      const successful = checks.filter(c => c.status === 'UP').length;
+      const uptimePercentage = total > 0 ? (successful / total) * 100 : null;
+      
+      return {
+        ...mon,
+        uptimePercentage
+      };
+    }));
+
+    res.json(listWithStats);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch API monitors' });
+  }
+});
+
+// Add API Monitor
+app.post('/api/projects/:projectId/api-monitors', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const projectId = parseInt(req.params.projectId);
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const belongs = await checkOrgMembership(user.id, project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const {
+      name,
+      endpointUrl,
+      method,
+      intervalSeconds,
+      timeoutMs,
+      expectedStatusCode,
+      expectedContentType,
+      requestHeaders,
+      requestBody,
+      responseValidation,
+      active
+    } = req.body;
+
+    if (!name || !endpointUrl) {
+      return res.status(400).json({ error: 'Name and Endpoint URL are required' });
+    }
+
+    try {
+      new URL(endpointUrl);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid URL schema format.' });
+    }
+
+    // Insert monitor
+    const inserted = await db.insert(apiMonitors)
+      .values({
+        projectId,
+        name,
+        endpointUrl,
+        method: String(method || 'GET').toUpperCase(),
+        intervalSeconds: parseInt(intervalSeconds) || 300,
+        timeoutMs: parseInt(timeoutMs) || 10000,
+        expectedStatusCode: parseInt(expectedStatusCode) || 200,
+        expectedContentType: expectedContentType || null,
+        requestHeaders: requestHeaders ? JSON.stringify(requestHeaders) : null,
+        requestBody: requestBody || null,
+        responseValidation: responseValidation ? JSON.stringify(responseValidation) : null,
+        active: active !== undefined ? Boolean(active) : true
+      })
+      .returning();
+
+    const newMonitor = inserted[0];
+
+    await logAdminActionInDb(
+      user.id,
+      user.email,
+      'CREATE_API_MONITOR',
+      `API Monitor "${name}" created for project ${project.name}`,
+      req.ip
+    );
+
+    // Synchronously run the first API check right away!
+    if (newMonitor.active) {
+      await processApiMonitorCheck(newMonitor.id);
+    }
+
+    const fresh = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, newMonitor.id)
+    });
+
+    res.status(201).json(fresh);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to create API monitor' });
+  }
+});
+
+// Get individual API monitor details
+app.get('/api/api-monitors/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const monitorId = parseInt(req.params.id);
+    const monitorObj = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, monitorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!monitorObj || !monitorObj.project) {
+      return res.status(404).json({ error: 'API Monitor not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, monitorObj.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    // Scrub secret header references before returning to client!
+    const sanitized = { ...monitorObj };
+    if (sanitized.requestHeaders) {
+      try {
+        const headers = JSON.parse(sanitized.requestHeaders);
+        const scrubbed: Record<string, string> = {};
+        for (const [k, v] of Object.entries(headers)) {
+          if (String(v).includes('{{') && String(v).includes('}}')) {
+            scrubbed[k] = '•••••••• (Secret Reference)';
+          } else {
+            scrubbed[k] = String(v);
+          }
+        }
+        sanitized.requestHeaders = JSON.stringify(scrubbed);
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (sanitized.requestBody && (sanitized.requestBody.includes('{{') && sanitized.requestBody.includes('}}'))) {
+      sanitized.requestBody = '•••••••• (Contains Secret References)';
+    }
+
+    res.json(sanitized);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch API monitor' });
+  }
+});
+
+// Update API Monitor
+app.patch('/api/api-monitors/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const monitorId = parseInt(req.params.id);
+    const monitorObj = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, monitorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!monitorObj || !monitorObj.project) {
+      return res.status(404).json({ error: 'API Monitor not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, monitorObj.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const {
+      name,
+      endpointUrl,
+      method,
+      intervalSeconds,
+      timeoutMs,
+      expectedStatusCode,
+      expectedContentType,
+      requestHeaders,
+      requestBody,
+      responseValidation,
+      active
+    } = req.body;
+
+    const updates: any = {};
+    if (name !== undefined) updates.name = name;
+    if (endpointUrl !== undefined) {
+      try {
+        new URL(endpointUrl);
+        updates.endpointUrl = endpointUrl;
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid URL schema format' });
+      }
+    }
+    if (method !== undefined) updates.method = String(method).toUpperCase();
+    if (intervalSeconds !== undefined) updates.intervalSeconds = parseInt(intervalSeconds);
+    if (timeoutMs !== undefined) updates.timeoutMs = parseInt(timeoutMs);
+    if (expectedStatusCode !== undefined) updates.expectedStatusCode = parseInt(expectedStatusCode);
+    if (expectedContentType !== undefined) updates.expectedContentType = expectedContentType || null;
+    if (requestHeaders !== undefined) updates.requestHeaders = requestHeaders ? JSON.stringify(requestHeaders) : null;
+    if (requestBody !== undefined) updates.requestBody = requestBody || null;
+    if (responseValidation !== undefined) updates.responseValidation = responseValidation ? JSON.stringify(responseValidation) : null;
+    if (active !== undefined) updates.active = Boolean(active);
+
+    updates.updatedAt = new Date();
+
+    const updated = await db.update(apiMonitors)
+      .set(updates)
+      .where(eq(apiMonitors.id, monitorId))
+      .returning();
+
+    res.json(updated[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to update API monitor' });
+  }
+});
+
+// Delete API Monitor
+app.delete('/api/api-monitors/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const monitorId = parseInt(req.params.id);
+    const monitorObj = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, monitorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!monitorObj || !monitorObj.project) {
+      return res.status(404).json({ error: 'API Monitor not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, monitorObj.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    await db.delete(apiMonitors).where(eq(apiMonitors.id, monitorId));
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to delete API monitor' });
+  }
+});
+
+// Run API Check manual trigger
+app.post('/api/api-monitors/:id/check', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const monitorId = parseInt(req.params.id);
+    const monitorObj = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, monitorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!monitorObj || !monitorObj.project) {
+      return res.status(404).json({ error: 'API Monitor not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, monitorObj.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const result = await processApiMonitorCheck(monitorId);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to execute manual API check' });
+  }
+});
+
+// Get historical checks for an API Monitor
+app.get('/api/api-monitors/:id/checks', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const monitorId = parseInt(req.params.id);
+    const monitorObj = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, monitorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!monitorObj || !monitorObj.project) {
+      return res.status(404).json({ error: 'API Monitor not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, monitorObj.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = (page - 1) * limit;
+
+    const list = await db.select()
+      .from(apiMonitorChecks)
+      .where(eq(apiMonitorChecks.apiMonitorId, monitorId))
+      .orderBy(desc(apiMonitorChecks.checkedAt))
+      .limit(limit)
+      .offset(offset);
+
+    const totalCountResult = await db.select({ count: sql<number>`count(*)::int` })
+      .from(apiMonitorChecks)
+      .where(eq(apiMonitorChecks.apiMonitorId, monitorId));
+
+    res.json({ checks: list, page, limit, total: totalCountResult[0]?.count || 0 });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch checks' });
+  }
+});
+
+// Get incidents list for an API monitor
+app.get('/api/api-monitors/:id/incidents', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const monitorId = parseInt(req.params.id);
+    const monitorObj = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, monitorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!monitorObj || !monitorObj.project) {
+      return res.status(404).json({ error: 'API Monitor not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, monitorObj.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const list = await db.select()
+      .from(incidents)
+      .where(eq(incidents.apiMonitorId, monitorId))
+      .orderBy(desc(incidents.startedAt));
+
+    res.json(list);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch incidents' });
+  }
+});
+
+// Get performance latency aggregates and series
+app.get('/api/api-monitors/:id/performance', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.dbUser;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const monitorId = parseInt(req.params.id);
+    const monitorObj = await db.query.apiMonitors.findFirst({
+      where: eq(apiMonitors.id, monitorId),
+      with: {
+        project: true
+      } as any
+    }) as any;
+
+    if (!monitorObj || !monitorObj.project) {
+      return res.status(404).json({ error: 'API Monitor not found' });
+    }
+
+    const belongs = await checkOrgMembership(user.id, monitorObj.project.organizationId || 0);
+    if (!belongs) return res.status(403).json({ error: 'Forbidden' });
+
+    const days = parseInt(req.query.days as string) || 30;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    const checks = await db.select({
+      responseTimeMs: apiMonitorChecks.responseTimeMs,
+      checkedAt: apiMonitorChecks.checkedAt,
+      status: apiMonitorChecks.status
+    })
+    .from(apiMonitorChecks)
+    .where(and(
+      eq(apiMonitorChecks.apiMonitorId, monitorId),
+      gte(apiMonitorChecks.checkedAt, cutoffDate)
+    ))
+    .orderBy(desc(apiMonitorChecks.checkedAt));
+
+    const latencies = checks
+      .map(c => c.responseTimeMs)
+      .filter((t): t is number => typeof t === 'number' && t > 0)
+      .sort((a, b) => a - b);
+
+    const total = latencies.length;
+    const avg = total > 0 ? Math.round(latencies.reduce((acc, v) => acc + v, 0) / total) : 0;
+    const min = total > 0 ? latencies[0] : 0;
+    const max = total > 0 ? latencies[total - 1] : 0;
+
+    // Percentiles (p50, p95, p99)
+    const percentile = (p: number) => {
+      if (total === 0) return 0;
+      const index = Math.ceil((p / 100) * total) - 1;
+      return latencies[Math.max(0, index)];
+    };
+
+    res.json({
+      average: avg,
+      minimum: min,
+      maximum: max,
+      p50: percentile(50),
+      p95: percentile(95),
+      p99: percentile(99),
+      totalChecks: total,
+      chartSeries: checks.slice(0, 100).reverse()
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch performance telemetry' });
   }
 });
 
@@ -1080,6 +2143,23 @@ const runSchedulerLoop = async () => {
       
       // Execute the health check engine
       await processMonitorCheck(m.id);
+    }
+
+    // Fetch up to 10 active API monitors that are due for checking
+    const dueApiMonitors = await db.select({ id: apiMonitors.id })
+      .from(apiMonitors)
+      .where(and(
+        eq(apiMonitors.active, true),
+        lte(apiMonitors.nextCheckAt, now)
+      ))
+      .limit(10);
+
+    for (const m of dueApiMonitors) {
+      const lockDate = new Date(now.getTime() + 300 * 1000);
+      await db.update(apiMonitors).set({ nextCheckAt: lockDate }).where(eq(apiMonitors.id, m.id));
+      
+      // Execute the API check engine
+      await processApiMonitorCheck(m.id);
     }
   } catch (err) {
     console.error('[SCHEDULER] Local loop background check error:', err);

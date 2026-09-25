@@ -127,7 +127,8 @@ export const monitorChecks = pgTable('monitor_checks', {
 // Incidents table
 export const incidents = pgTable('incidents', {
   id: serial('id').primaryKey(),
-  monitorId: integer('monitor_id').references(() => monitors.id, { onDelete: 'cascade' }).notNull(),
+  monitorId: integer('monitor_id').references(() => monitors.id, { onDelete: 'cascade' }),
+  apiMonitorId: integer('api_monitor_id').references(() => apiMonitors.id, { onDelete: 'cascade' }),
   projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
   status: text('status').notNull(), // OPEN, RESOLVED
   startedAt: timestamp('started_at').defaultNow().notNull(),
@@ -253,6 +254,10 @@ export const incidentsRelations = relations(incidents, ({ one }) => ({
     fields: [incidents.monitorId],
     references: [monitors.id],
   }),
+  apiMonitor: one(apiMonitors, {
+    fields: [incidents.apiMonitorId],
+    references: [apiMonitors.id],
+  }),
   project: one(projects, {
     fields: [incidents.projectId],
     references: [projects.id],
@@ -313,5 +318,185 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, {
     fields: [notifications.userId],
     references: [users.id],
+  }),
+}));
+
+// --- PHASE 6 NEW TABLES ---
+
+// Errors table
+export const errors = pgTable('errors', {
+  id: serial('id').primaryKey(),
+  projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  organizationId: integer('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  environment: text('environment').default('PRODUCTION').notNull(),
+  fingerprint: text('fingerprint').notNull(),
+  message: text('message').notNull(),
+  exceptionType: text('exception_type').notNull(),
+  stackTrace: text('stack_trace'),
+  severity: text('severity').default('ERROR').notNull(), // DEBUG, INFO, WARNING, ERROR, CRITICAL
+  source: text('source').default('SERVER').notNull(), // BROWSER, SERVER, API, WEBHOOK, MANUAL
+  firstSeenAt: timestamp('first_seen_at').defaultNow().notNull(),
+  lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+  occurrenceCount: integer('occurrence_count').default(1).notNull(),
+  affectedUsersCount: integer('affected_users_count').default(1).notNull(),
+  status: text('status').default('OPEN').notNull(), // OPEN, RESOLVED, IGNORED
+  assignedTo: integer('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Error Events table
+export const errorEvents = pgTable('error_events', {
+  id: serial('id').primaryKey(),
+  errorId: integer('error_id').references(() => errors.id, { onDelete: 'cascade' }).notNull(),
+  projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  organizationId: integer('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  environment: text('environment').default('PRODUCTION').notNull(),
+  message: text('message').notNull(),
+  stackTrace: text('stack_trace'),
+  exceptionType: text('exception_type').notNull(),
+  requestId: text('request_id'),
+  traceId: text('trace_id'),
+  userIdentifierHash: text('user_identifier_hash'),
+  url: text('url'),
+  endpoint: text('endpoint'),
+  httpMethod: text('http_method'),
+  httpStatus: integer('http_status'),
+  browser: text('browser'),
+  operatingSystem: text('operating_system'),
+  device: text('device'),
+  release: text('release'),
+  metadata: text('metadata'), // JSON stringified
+  occurredAt: timestamp('occurred_at').defaultNow().notNull(),
+}, (table) => ({
+  errorIdIdx: index('error_events_error_id_idx').on(table.errorId),
+  projectIdIdx: index('error_events_project_id_idx').on(table.projectId),
+  occurredAtIdx: index('error_events_occurred_at_idx').on(table.occurredAt),
+}));
+
+// Project Ingestion Keys table
+export const projectIngestionKeys = pgTable('project_ingestion_keys', {
+  id: serial('id').primaryKey(),
+  projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  keyHash: text('key_hash').notNull(),
+  name: text('name').notNull(),
+  lastUsedAt: timestamp('last_used_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  revokedAt: timestamp('revoked_at'),
+});
+
+// Releases table
+export const releases = pgTable('releases', {
+  id: serial('id').primaryKey(),
+  projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  version: text('version').notNull(),
+  environment: text('environment').default('PRODUCTION').notNull(),
+  commitSha: text('commit_sha'),
+  deploymentId: text('deployment_id'),
+  deployedAt: timestamp('deployed_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// API Monitors table
+export const apiMonitors = pgTable('api_monitors', {
+  id: serial('id').primaryKey(),
+  projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  name: text('name').notNull(),
+  endpointUrl: text('endpoint_url').notNull(),
+  method: text('method').default('GET').notNull(),
+  intervalSeconds: integer('interval_seconds').default(300).notNull(),
+  timeoutMs: integer('timeout_ms').default(10000).notNull(),
+  expectedStatusCode: integer('expected_status_code').default(200).notNull(),
+  expectedContentType: text('expected_content_type'),
+  requestHeaders: text('request_headers'), // JSON string
+  requestBody: text('request_body'), // raw or JSON string
+  responseValidation: text('response_validation'), // JSON string
+  active: boolean('active').default(true).notNull(),
+  lastStatus: text('last_status').default('UNKNOWN').notNull(), // UP, DOWN, TIMEOUT, ERROR, VALIDATION_FAILED
+  lastResponseTimeMs: integer('last_response_time_ms'),
+  consecutiveFailures: integer('consecutive_failures').default(0).notNull(),
+  lastCheckedAt: timestamp('last_checked_at'),
+  nextCheckAt: timestamp('next_check_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// API Monitor Checks table
+export const apiMonitorChecks = pgTable('api_monitor_checks', {
+  id: serial('id').primaryKey(),
+  apiMonitorId: integer('api_monitor_id').references(() => apiMonitors.id, { onDelete: 'cascade' }).notNull(),
+  status: text('status').notNull(), // UP, DOWN, TIMEOUT, ERROR, VALIDATION_FAILED
+  statusCode: integer('status_code'),
+  responseTimeMs: integer('response_time_ms'),
+  contentType: text('content_type'),
+  validationStatus: text('validation_status'), // e.g. "PASSED", "FAILED"
+  errorType: text('error_type'),
+  errorMessage: text('error_message'),
+  checkedAt: timestamp('checked_at').defaultNow().notNull(),
+}, (table) => ({
+  apiMonitorIdIdx: index('api_monitor_checks_api_monitor_id_idx').on(table.apiMonitorId),
+  checkedAtIdx: index('api_monitor_checks_checked_at_idx').on(table.checkedAt),
+  apiMonitorIdCheckedAtIdx: index('api_monitor_checks_api_monitor_id_checked_at_idx').on(table.apiMonitorId, table.checkedAt),
+}));
+
+// --- RELATIONS FOR NEW TABLES ---
+
+export const errorsRelations = relations(errors, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [errors.projectId],
+    references: [projects.id],
+  }),
+  organization: one(organizations, {
+    fields: [errors.organizationId],
+    references: [organizations.id],
+  }),
+  assignedToUser: one(users, {
+    fields: [errors.assignedTo],
+    references: [users.id],
+  }),
+  events: many(errorEvents),
+}));
+
+export const errorEventsRelations = relations(errorEvents, ({ one }) => ({
+  error: one(errors, {
+    fields: [errorEvents.errorId],
+    references: [errors.id],
+  }),
+  project: one(projects, {
+    fields: [errorEvents.projectId],
+    references: [projects.id],
+  }),
+  organization: one(organizations, {
+    fields: [errorEvents.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const projectIngestionKeysRelations = relations(projectIngestionKeys, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectIngestionKeys.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const releasesRelations = relations(releases, ({ one }) => ({
+  project: one(projects, {
+    fields: [releases.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const apiMonitorsRelations = relations(apiMonitors, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [apiMonitors.projectId],
+    references: [projects.id],
+  }),
+  checks: many(apiMonitorChecks),
+}));
+
+export const apiMonitorChecksRelations = relations(apiMonitorChecks, ({ one }) => ({
+  monitor: one(apiMonitors, {
+    fields: [apiMonitorChecks.apiMonitorId],
+    references: [apiMonitors.id],
   }),
 }));

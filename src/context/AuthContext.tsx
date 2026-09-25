@@ -1,13 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
-  signInWithPopup,
-  updateProfile as fbUpdateProfile
-} from 'firebase/auth';
-import { auth, googleAuthProvider } from '../lib/firebase.ts';
+  useAuth as useClerkAuth, 
+  useUser as useClerkUser, 
+  useSignIn as useClerkSignIn, 
+  useSignUp as useClerkSignUp 
+} from '@clerk/clerk-react';
 
 export interface UserProfile {
   id: string;
@@ -35,6 +32,10 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<UserProfile>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => void;
+  verifyEmailCode: (code: string) => Promise<UserProfile>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (code: string, newPassword: string) => Promise<void>;
+  signUpSession: any; // Allow screens to access signup state
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,12 +45,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Sync with Firebase auth state
+  const { isLoaded: authLoaded, sessionId, getToken, signOut: clerkSignOut } = useClerkAuth();
+  const { user: clerkUser } = useClerkUser();
+  const { isLoaded: signInLoaded, signIn, setActive: setSignInActive } = useClerkSignIn();
+  const { isLoaded: signUpLoaded, signUp, setActive: setSignUpActive } = useClerkSignUp();
+
+  // Sync with Clerk auth state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
+    if (!authLoaded) return;
+
+    const syncUser = async () => {
+      if (sessionId && clerkUser) {
         try {
-          const idToken = await fbUser.getIdToken(true);
+          const idToken = await getToken();
           setToken(idToken);
 
           // Call our server endpoint to sync and fetch profile
@@ -68,9 +76,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Form target UserProfile that the frontend expects
           const profile: UserProfile = {
             id: String(data.user.id),
-            name: data.user.name || fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
-            email: data.user.email || fbUser.email || '',
-            avatar: data.user.avatarUrl || fbUser.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.user.name || 'User')}`,
+            name: data.user.name || `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || 'User',
+            email: data.user.email || clerkUser.emailAddresses[0]?.emailAddress || '',
+            avatar: data.user.avatarUrl || clerkUser.imageUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.user.name || 'User')}`,
             role: data.user.role,
             status: data.user.status,
             createdAt: data.user.createdAt,
@@ -85,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           setUser(profile);
         } catch (err) {
-          console.error('Error synchronizing auth state:', err);
+          console.error('Error synchronizing auth state with backend:', err);
           setUser(null);
           setToken(null);
         }
@@ -94,145 +102,150 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(null);
       }
       setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
-  }, []);
+    syncUser();
+  }, [authLoaded, sessionId, clerkUser, getToken]);
 
   const login = async (email: string, password: string): Promise<UserProfile> => {
+    if (!signInLoaded) throw new Error('Clerk authentication service is not fully initialized.');
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const idToken = await userCredential.user.getIdToken();
-      setToken(idToken);
-
-      const res = await fetch('/api/user/profile', {
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
+      const res = await signIn.create({
+        identifier: email,
+        password,
       });
-      if (!res.ok) {
-        throw new Error('Failed to retrieve user profile from PostgreSQL');
+
+      if (res.status === 'complete') {
+        await setSignInActive({ session: res.createdSessionId });
+        
+        // Return dummy profile immediately, useEffect will resolve the real state
+        return {
+          id: 'temp',
+          name: email.split('@')[0],
+          email,
+          role: 'USER',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          notificationsEnabled: { email: true, security: true, performance: true, deployments: true },
+          theme: 'dark',
+        };
+      } else {
+        throw new Error(`Sign in status is: ${res.status}`);
       }
-      const data = await res.json();
-
-      const profile: UserProfile = {
-        id: String(data.user.id),
-        name: data.user.name || userCredential.user.displayName || email.split('@')[0],
-        email: data.user.email,
-        avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.user.name || 'User')}`,
-        role: data.user.role,
-        status: data.user.status,
-        createdAt: data.user.createdAt,
-        notificationsEnabled: {
-          email: true,
-          security: true,
-          performance: true,
-          deployments: true,
-        },
-        theme: 'dark',
-      };
-
-      setUser(profile);
-      return profile;
     } catch (error: any) {
       console.error('Login error:', error);
-      throw new Error(error.message || 'Authentication failed. Please check your credentials.');
+      throw new Error(error.errors?.[0]?.message || error.message || 'Authentication failed. Please check credentials.');
     }
   };
 
   const signup = async (name: string, email: string, password: string): Promise<UserProfile> => {
+    if (!signUpLoaded) throw new Error('Clerk registration service is not fully initialized.');
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // Update firebase display name
-      if (userCredential.user) {
-        await fbUpdateProfile(userCredential.user, {
-          displayName: name
-        });
-      }
-
-      const idToken = await userCredential.user.getIdToken();
-      setToken(idToken);
-
-      // Sync user to PostgreSQL database
-      const res = await fetch('/api/user/profile', {
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
+      const res = await signUp.create({
+        emailAddress: email,
+        password,
+        firstName: name.split(' ')[0] || name,
+        lastName: name.split(' ').slice(1).join(' ') || '',
       });
-      if (!res.ok) {
-        throw new Error('Failed to record profile in PostgreSQL database');
-      }
-      const data = await res.json();
 
-      const profile: UserProfile = {
-        id: String(data.user.id),
-        name: name,
-        email: email,
-        avatar: data.user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
-        role: data.user.role,
-        status: data.user.status,
-        createdAt: data.user.createdAt,
-        notificationsEnabled: {
-          email: true,
-          security: true,
-          performance: true,
-          deployments: true,
-        },
+      if (res.status === 'complete') {
+        await setSignUpActive({ session: res.createdSessionId });
+      } else {
+        // Prepare verification
+        await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      }
+
+      return {
+        id: 'temp',
+        name,
+        email,
+        role: 'USER',
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        notificationsEnabled: { email: true, security: true, performance: true, deployments: true },
         theme: 'dark',
       };
-
-      setUser(profile);
-      return profile;
     } catch (error: any) {
       console.error('Signup error:', error);
-      throw new Error(error.message || 'Account registration failed.');
+      throw new Error(error.errors?.[0]?.message || error.message || 'Account registration failed.');
+    }
+  };
+
+  const verifyEmailCode = async (code: string): Promise<UserProfile> => {
+    if (!signUpLoaded) throw new Error('Clerk registration service is not fully initialized.');
+    try {
+      const res = await signUp.attemptEmailAddressVerification({ code });
+      if (res.status === 'complete') {
+        await setSignUpActive({ session: res.createdSessionId });
+        return {
+          id: 'temp',
+          name: 'User',
+          email: 'email@example.com',
+          role: 'USER',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          notificationsEnabled: { email: true, security: true, performance: true, deployments: true },
+          theme: 'dark',
+        };
+      } else {
+        throw new Error(`Verification status: ${res.status}`);
+      }
+    } catch (error: any) {
+      console.error('Verify email code error:', error);
+      throw new Error(error.errors?.[0]?.message || error.message || 'Email verification failed.');
+    }
+  };
+
+  const forgotPassword = async (email: string): Promise<void> => {
+    if (!signInLoaded) throw new Error('Clerk authentication service is not fully initialized.');
+    try {
+      await signIn.create({
+        strategy: 'reset_password_email_code',
+        identifier: email,
+      });
+    } catch (error: any) {
+      console.error('ForgotPassword error:', error);
+      throw new Error(error.errors?.[0]?.message || error.message || 'Failed to dispatch reset code.');
+    }
+  };
+
+  const resetPassword = async (code: string, newPassword: string): Promise<void> => {
+    if (!signInLoaded) throw new Error('Clerk authentication service is not fully initialized.');
+    try {
+      const result = await signIn.attemptFirstFactor({
+        strategy: 'reset_password_email_code',
+        code,
+        password: newPassword,
+      });
+      if (result.status === 'complete') {
+        await setSignInActive({ session: result.createdSessionId });
+      } else {
+        throw new Error(`Reset status: ${result.status}`);
+      }
+    } catch (error: any) {
+      console.error('ResetPassword error:', error);
+      throw new Error(error.errors?.[0]?.message || error.message || 'Failed to establish new credentials.');
     }
   };
 
   const loginWithGoogle = async (): Promise<UserProfile> => {
+    if (!signInLoaded) throw new Error('Clerk authentication service is not fully initialized.');
     try {
-      const userCredential = await signInWithPopup(auth, googleAuthProvider);
-      const idToken = await userCredential.user.getIdToken();
-      setToken(idToken);
-
-      const res = await fetch('/api/user/profile', {
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
+      await signIn.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/dashboard',
       });
-      if (!res.ok) {
-        throw new Error('Failed to retrieve Google user profile from database');
-      }
-      const data = await res.json();
-
-      const profile: UserProfile = {
-        id: String(data.user.id),
-        name: data.user.name || userCredential.user.displayName || 'Google User',
-        email: data.user.email,
-        avatar: data.user.avatarUrl || userCredential.user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.user.name || 'User')}`,
-        role: data.user.role,
-        status: data.user.status,
-        createdAt: data.user.createdAt,
-        notificationsEnabled: {
-          email: true,
-          security: true,
-          performance: true,
-          deployments: true,
-        },
-        theme: 'dark',
-      };
-
-      setUser(profile);
-      return profile;
+      return {} as any;
     } catch (error: any) {
       console.error('Google Auth error:', error);
-      throw new Error(error.message || 'Google Authentication failed.');
+      throw new Error(error.errors?.[0]?.message || error.message || 'Google Authentication failed.');
     }
   };
 
   const logout = async () => {
     try {
-      await signOut(auth);
+      await clerkSignOut();
       setUser(null);
       setToken(null);
     } catch (error) {
@@ -246,7 +259,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, signup, loginWithGoogle, logout, updateProfile }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      token, 
+      loading, 
+      login, 
+      signup, 
+      loginWithGoogle, 
+      logout, 
+      updateProfile,
+      verifyEmailCode,
+      forgotPassword,
+      resetPassword,
+      signUpSession: signUp
+    }}>
       {children}
     </AuthContext.Provider>
   );
