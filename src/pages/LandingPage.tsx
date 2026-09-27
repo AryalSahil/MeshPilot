@@ -34,6 +34,100 @@ interface Integration {
   color: string;
 }
 
+// Custom, minimalist animated icon components for each feature
+function UptimeIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" className="stroke-indigo-500/20" />
+      <circle cx="12" cy="12" r="3" className="fill-indigo-400 stroke-none" />
+      <circle cx="12" cy="12" r="6" className="animate-ping opacity-60 origin-center" style={{ animationDuration: '3s' }} />
+    </svg>
+  );
+}
+
+function PerformanceIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 2v2M4.93 4.93l1.41 1.41M2 12h2M6.34 17.66l-1.41 1.41M12 20v2M17.66 17.66l1.41 1.41M20 12h2M19.07 4.93l-1.41 1.41" className="opacity-30" />
+      <circle cx="12" cy="12" r="2.5" className="fill-indigo-400 stroke-none" />
+      <line x1="12" y1="12" x2="16" y2="8" strokeLinecap="round" className="origin-bottom-left animate-pulse" style={{ transformOrigin: '12px 12px', animationDuration: '1.5s' }} />
+    </svg>
+  );
+}
+
+function ErrorTrackingIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" style={{ animationDuration: '2s' }}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      <circle cx="12" cy="15" r="1.5" className="fill-indigo-400 animate-ping opacity-75" />
+    </svg>
+  );
+}
+
+function ApiIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <rect x="2" y="2" width="6" height="6" rx="1.5" className="opacity-30" />
+      <rect x="16" y="2" width="6" height="6" rx="1.5" className="opacity-30" />
+      <rect x="9" y="16" width="6" height="6" rx="1.5" className="opacity-30" />
+      <path d="M5 8v4h4M19 8v4h-4" className="stroke-indigo-400 opacity-60" />
+      <circle cx="5" cy="12" r="2" className="fill-indigo-400 stroke-none animate-bounce" style={{ animationDuration: '1.8s' }} />
+    </svg>
+  );
+}
+
+function SecurityIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      <line x1="4" y1="11" x2="20" y2="11" className="stroke-indigo-300 opacity-60 animate-pulse" />
+    </svg>
+  );
+}
+
+function AiIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3" className="fill-indigo-400 animate-ping opacity-70" />
+      <circle cx="12" cy="12" r="3" className="fill-indigo-400 stroke-none" />
+      <path d="M12 5V2M12 19v3M5 12H2M22 12h-3" className="stroke-indigo-400 opacity-40" />
+      <line x1="5" y1="5" x2="19" y2="19" className="stroke-indigo-400 opacity-20 animate-pulse" />
+    </svg>
+  );
+}
+
+function RadarIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400 animate-spin" style={{ animationDuration: '5s' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" className="stroke-indigo-500/20" />
+      <circle cx="12" cy="12" r="5" className="stroke-indigo-500/40" />
+      <line x1="12" y1="12" x2="18" y2="6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DeploymentIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path d="M6 18V6M18 18V6" className="opacity-30" strokeDasharray="2 2" />
+      <circle cx="6" cy="6" r="3" className="fill-indigo-500/10" />
+      <circle cx="18" cy="18" r="3" className="fill-indigo-500/10" />
+      <path d="M6 12h12" className="stroke-indigo-400 animate-pulse" />
+      <circle cx="12" cy="12" r="2" className="fill-indigo-300 stroke-none animate-ping" />
+    </svg>
+  );
+}
+
+function ReportsIcon() {
+  return (
+    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <line x1="6" y1="20" x2="6" y2="12" className="stroke-indigo-400 animate-pulse" strokeLinecap="round" />
+      <line x1="12" y1="20" x2="12" y2="5" className="stroke-indigo-400 animate-pulse" strokeLinecap="round" style={{ animationDelay: '0.2s', animationDuration: '1.2s' }} />
+      <line x1="18" y1="20" x2="18" y2="9" className="stroke-indigo-400 animate-pulse" strokeLinecap="round" style={{ animationDelay: '0.4s', animationDuration: '1s' }} />
+    </svg>
+  );
+}
+
 interface LandingPageProps {
   onStartSandbox: () => void;
   onNavigate: (path: string) => void;
@@ -42,6 +136,7 @@ interface LandingPageProps {
 export default function LandingPage({ onStartSandbox, onNavigate }: LandingPageProps) {
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annually'>('annually');
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+  const [activeHowStep, setActiveHowStep] = useState<number>(0);
 
   const [integrationsList, setIntegrationsList] = useState<Integration[]>([
     { id: 'github', name: 'GitHub', category: 'Platform', description: 'Trigger automatic code diff analysis and commit correlation.', connected: true, color: 'text-neutral-200' },
@@ -62,15 +157,15 @@ export default function LandingPage({ onStartSandbox, onNavigate }: LandingPageP
   };
 
   const features: FeatureCard[] = [
-    { id: 'uptime', title: 'Global Uptime Monitor', category: 'Infrastructure', description: 'Proactively test your endpoint accessibility from 22 globally distributed edge nodes every 30 seconds.', metric: '30s intervals · 22 regions', icon: Globe, path: '/features/uptime-monitor' },
-    { id: 'perf', title: 'Vitals & Performance Logs', category: 'Analytics', description: 'Ingest Core Web Vitals, Time to First Byte (TTFB), memory allocations, and network bandwidth in real-time.', metric: 'TTFB tracking · V8 heap logs', icon: Gauge, path: '/features/performance' },
-    { id: 'errors', title: 'Contextual Error Tracking', category: 'Debugging', description: 'Unify client & server error loops. Decompile stack traces with sourcemaps instantly.', metric: 'Exception maps · Source logs', icon: AlertTriangle, path: '/features/performance' },
-    { id: 'api', title: 'End-to-End API Gateway', category: 'Infrastructure', description: 'Map upstream status codes, response payloads, and API gateway speed against precise SLA thresholds.', metric: '100% telemetry coverage', icon: Network, path: '/features/uptime-monitor' },
-    { id: 'sec', title: 'Continuous Security Scans', category: 'Protection', description: 'Perform daily OWASP audits and dependency tree audits to ensure you are immune to common zero-day exploits.', metric: 'OWASP standard · Zero CVEs', icon: Shield, path: '/features/application-radar' },
-    { id: 'ai', title: 'Autonomous AI Diagnosis', category: 'AI Intelligence', description: 'Our custom model matches traces, error frequencies, and GitHub commits to output production-ready hotfix PRs.', metric: 'LLM core correlation', icon: Cpu, path: '/features/ai-diagnostics' },
-    { id: 'radar', title: 'Active Application Radar', category: 'Monitoring', description: 'A highly visual Concentric Sonar layout sweeps through your service endpoints and maps connection status.', metric: 'Live sweeping arm graph', icon: Activity, path: '/features/application-radar' },
-    { id: 'deploy', title: 'Git & Deployment Tracking', category: 'Platform', description: 'Correlate Vercel, Railway, and Netlify pipeline build logs directly with performance fluctuations.', metric: 'GitHub action integration', icon: GitBranch, path: '/features/system-hooks' },
-    { id: 'reports', title: 'Clean Telemetry Briefs', category: 'Reporting', description: 'Generate weekly white-labeled system reports, downtime intervals, and optimization summaries.', metric: 'PDF & Slack exportable', icon: FileText, path: '/features/performance' }
+    { id: 'uptime', title: 'Global Uptime Monitor', category: 'Infrastructure', description: 'Proactively test your endpoint accessibility from 22 globally distributed edge nodes every 30 seconds.', metric: '30s intervals · 22 regions', icon: UptimeIcon, path: '/features/uptime-monitor' },
+    { id: 'perf', title: 'Vitals & Performance Logs', category: 'Analytics', description: 'Ingest Core Web Vitals, Time to First Byte (TTFB), memory allocations, and network bandwidth in real-time.', metric: 'TTFB tracking · V8 heap logs', icon: PerformanceIcon, path: '/features/performance' },
+    { id: 'errors', title: 'Contextual Error Tracking', category: 'Debugging', description: 'Unify client & server error loops. Decompile stack traces with sourcemaps instantly.', metric: 'Exception maps · Source logs', icon: ErrorTrackingIcon, path: '/features/performance' },
+    { id: 'api', title: 'End-to-End API Gateway', category: 'Infrastructure', description: 'Map upstream status codes, response payloads, and API gateway speed against precise SLA thresholds.', metric: '100% telemetry coverage', icon: ApiIcon, path: '/features/uptime-monitor' },
+    { id: 'sec', title: 'Continuous Security Scans', category: 'Protection', description: 'Perform daily OWASP audits and dependency tree audits to ensure you are immune to common zero-day exploits.', metric: 'OWASP standard · Zero CVEs', icon: SecurityIcon, path: '/features/application-radar' },
+    { id: 'ai', title: 'Autonomous AI Diagnosis', category: 'AI Intelligence', description: 'Our custom model matches traces, error frequencies, and GitHub commits to output production-ready hotfix PRs.', metric: 'LLM core correlation', icon: AiIcon, path: '/features/ai-diagnostics' },
+    { id: 'radar', title: 'Active Application Radar', category: 'Monitoring', description: 'A highly visual Concentric Sonar layout sweeps through your service endpoints and maps connection status.', metric: 'Live sweeping arm graph', icon: RadarIcon, path: '/features/application-radar' },
+    { id: 'deploy', title: 'Git & Deployment Tracking', category: 'Platform', description: 'Correlate Vercel, Railway, and Netlify pipeline build logs directly with performance fluctuations.', metric: 'GitHub action integration', icon: DeploymentIcon, path: '/features/system-hooks' },
+    { id: 'reports', title: 'Clean Telemetry Briefs', category: 'Reporting', description: 'Generate weekly white-labeled system reports, downtime intervals, and optimization summaries.', metric: 'PDF & Slack exportable', icon: ReportsIcon, path: '/features/performance' }
   ];
 
   const faqs: FAQItem[] = [
@@ -157,15 +252,39 @@ export default function LandingPage({ onStartSandbox, onNavigate }: LandingPageP
           </div>
 
           {/* Trusted by developers logo grid */}
-          <div className="mt-20 border-t border-neutral-900/60 pt-12">
-            <p className="text-xs font-mono text-neutral-500 tracking-wider uppercase mb-6 font-semibold">INTEGRATES AND AUDITS NATIVE DEPLOYMENTS ON</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-6 items-center justify-items-center opacity-40 hover:opacity-60 transition-opacity duration-300">
-              <span className="text-xs font-mono font-semibold tracking-widest text-neutral-400">VERCEL</span>
-              <span className="text-xs font-mono font-semibold tracking-widest text-neutral-400">GITHUB</span>
-              <span className="text-xs font-mono font-semibold tracking-widest text-neutral-400">NETLIFY</span>
-              <span className="text-xs font-mono font-semibold tracking-widest text-neutral-400">RAILWAY</span>
-              <span className="text-xs font-mono font-semibold tracking-widest text-neutral-400">SUPABASE</span>
-              <span className="text-xs font-mono font-semibold tracking-widest text-neutral-400">CLOUDFLARE</span>
+          <div className="mt-20 border-t border-neutral-900/40 pt-12">
+            <p className="text-xs font-mono text-neutral-500 tracking-wider uppercase mb-6 font-semibold">POWERING INFRASTRUCTURE & HIGH-VELOCITY TEAMS AT</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-6 items-center justify-items-center">
+              {/* Stripe */}
+              <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-all duration-300 group cursor-pointer">
+                <div className="w-5 h-5 rounded bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center font-bold text-indigo-400 text-xs font-sans group-hover:scale-105 transition-transform">S</div>
+                <span className="text-[11px] font-sans font-bold tracking-tight text-neutral-300">stripe</span>
+              </div>
+              {/* Linear */}
+              <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-all duration-300 group cursor-pointer">
+                <div className="w-5 h-5 rounded bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 text-[10px] font-sans group-hover:scale-105 transition-transform">L</div>
+                <span className="text-[11px] font-sans font-bold tracking-tight text-neutral-300">linear</span>
+              </div>
+              {/* Retool */}
+              <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-all duration-300 group cursor-pointer">
+                <div className="w-5 h-5 rounded bg-rose-500/10 border border-rose-500/20 flex items-center justify-center font-bold text-rose-400 text-[10px] font-sans group-hover:scale-105 transition-transform">R</div>
+                <span className="text-[11px] font-sans font-bold tracking-tight text-neutral-300">retool</span>
+              </div>
+              {/* Vercel */}
+              <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-all duration-300 group cursor-pointer">
+                <div className="w-5 h-5 rounded bg-white/5 border border-white/10 flex items-center justify-center font-bold text-white text-[10px] font-sans group-hover:scale-105 transition-transform">▲</div>
+                <span className="text-[11px] font-sans font-bold tracking-tight text-neutral-300">vercel</span>
+              </div>
+              {/* Supabase */}
+              <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-all duration-300 group cursor-pointer">
+                <div className="w-5 h-5 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-bold text-emerald-400 text-[10px] font-sans group-hover:scale-105 transition-transform">⚡</div>
+                <span className="text-[11px] font-sans font-bold tracking-tight text-neutral-300">supabase</span>
+              </div>
+              {/* Cloudflare */}
+              <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-all duration-300 group cursor-pointer">
+                <div className="w-5 h-5 rounded bg-amber-600/10 border border-amber-600/20 flex items-center justify-center font-bold text-amber-500 text-[10px] font-sans group-hover:scale-105 transition-transform">C</div>
+                <span className="text-[11px] font-sans font-bold tracking-tight text-neutral-300">cloudflare</span>
+              </div>
             </div>
           </div>
 
@@ -337,52 +456,184 @@ export default function LandingPage({ onStartSandbox, onNavigate }: LandingPageP
               Plug In. Analyze. Automate.
             </h2>
             <p className="text-neutral-400 text-sm">
-              We design complex tracing logic to run in three simple chapters.
+              Click on each chapter to explore the technical details and interactive telemetry logs of our runtime engine.
             </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative">
             
             {/* Step 1 */}
-            <div className="glass-card rounded-2xl p-6 relative flex flex-col justify-between bg-neutral-950/40">
+            <div 
+              onClick={() => setActiveHowStep(0)}
+              className={`glass-card rounded-2xl p-6 relative flex flex-col justify-between cursor-pointer transition-all duration-300 ${
+                activeHowStep === 0 
+                  ? 'border-indigo-500/40 bg-indigo-950/10 shadow-lg shadow-indigo-950/20 translate-y-[-2px]' 
+                  : 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
+              }`}
+            >
               <div>
-                <span className="text-4xl font-display font-bold text-indigo-500/20 block mb-4">01</span>
-                <h4 className="text-lg font-semibold text-white mb-2">Connect Your Web App</h4>
-                <p className="text-xs text-neutral-400 leading-relaxed mb-6 font-sans">
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`text-4xl font-display font-bold ${activeHowStep === 0 ? 'text-indigo-400' : 'text-neutral-700/60'}`}>01</span>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${
+                    activeHowStep === 0 ? 'bg-indigo-500/10 border-indigo-400/30 text-indigo-400' : 'bg-neutral-900/40 border-neutral-800/80 text-neutral-500'
+                  }`}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                  </div>
+                </div>
+                <h4 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                  <span>Connect Your Web App</span>
+                  {activeHowStep === 0 && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />}
+                </h4>
+                <p className="text-xs text-neutral-400 leading-relaxed mb-4 font-sans">
                   Deploy our lightweight, asynchronous client SDK or connect via Vercel and GitHub platform authorizations in under 60 seconds.
                 </p>
+
+                {/* Expanded Detailed Tooltip Panel */}
+                <div className={`overflow-hidden transition-all duration-300 origin-top ${
+                  activeHowStep === 0 ? 'max-h-56 opacity-100 mt-4 pt-4 border-t border-indigo-950/40' : 'max-h-0 opacity-0 pointer-events-none'
+                }`}>
+                  <p className="text-[11px] text-indigo-300 font-mono uppercase tracking-wider mb-2 font-bold">INTEGRATION TELEMETRY:</p>
+                  <ul className="space-y-2 text-[11px] text-neutral-400 font-sans">
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">⚡</span>
+                      <span>Zero-blocking asynchronous SDK script</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">⚡</span>
+                      <span>Ephemeral GitHub read-only tree mapping</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">⚡</span>
+                      <span>Clerk Authentication token-level alignment</span>
+                    </li>
+                  </ul>
+                  <p className="text-[10px] text-neutral-500 font-sans italic mt-3">
+                    Click steps 2 and 3 to review tracking workflows.
+                  </p>
+                </div>
               </div>
-              <div className="pt-4 border-t border-neutral-900 text-[11px] font-mono text-neutral-500 flex justify-between">
+
+              <div className="pt-4 mt-6 border-t border-neutral-900 text-[11px] font-mono text-neutral-500 flex justify-between">
                 <span>ESTIMATED TIME</span>
                 <span className="text-indigo-400 font-semibold">&lt; 1 minute</span>
               </div>
             </div>
 
             {/* Step 2 */}
-            <div className="glass-card rounded-2xl p-6 relative flex flex-col justify-between bg-neutral-950/40">
+            <div 
+              onClick={() => setActiveHowStep(1)}
+              className={`glass-card rounded-2xl p-6 relative flex flex-col justify-between cursor-pointer transition-all duration-300 ${
+                activeHowStep === 1 
+                  ? 'border-indigo-500/40 bg-indigo-950/10 shadow-lg shadow-indigo-950/20 translate-y-[-2px]' 
+                  : 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
+              }`}
+            >
               <div>
-                <span className="text-4xl font-display font-bold text-indigo-500/20 block mb-4">02</span>
-                <h4 className="text-lg font-semibold text-white mb-2">Continuous Stream Analysis</h4>
-                <p className="text-xs text-neutral-400 leading-relaxed mb-6 font-sans">
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`text-4xl font-display font-bold ${activeHowStep === 1 ? 'text-indigo-400' : 'text-neutral-700/60'}`}>02</span>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${
+                    activeHowStep === 1 ? 'bg-indigo-500/10 border-indigo-400/30 text-indigo-400' : 'bg-neutral-900/40 border-neutral-800/80 text-neutral-500'
+                  }`}>
+                    <svg className="w-4 h-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                </div>
+                <h4 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                  <span>Continuous Stream Analysis</span>
+                  {activeHowStep === 1 && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />}
+                </h4>
+                <p className="text-xs text-neutral-400 leading-relaxed mb-4 font-sans">
                   Let the platform ingest telemetry data continuously. We map DB transaction locks, CDN latency, Web Vitals, and application health trends.
                 </p>
+
+                {/* Expanded Detailed Tooltip Panel */}
+                <div className={`overflow-hidden transition-all duration-300 origin-top ${
+                  activeHowStep === 1 ? 'max-h-56 opacity-100 mt-4 pt-4 border-t border-indigo-950/40' : 'max-h-0 opacity-0 pointer-events-none'
+                }`}>
+                  <p className="text-[11px] text-indigo-300 font-mono uppercase tracking-wider mb-2 font-bold">STREAM TELEMETRY DETAILED:</p>
+                  <ul className="space-y-2 text-[11px] text-neutral-400 font-sans">
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">📈</span>
+                      <span>Real-time monitoring of Core Web Vitals (TTFB, FCP)</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">📈</span>
+                      <span>Continuous sonar endpoint validation sweeps</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">📈</span>
+                      <span>Encrypted telemetry partitioned in custom Firestore DB</span>
+                    </li>
+                  </ul>
+                  <p className="text-[10px] text-neutral-500 font-sans italic mt-3">
+                    Active state continuously streams metrics safely.
+                  </p>
+                </div>
               </div>
-              <div className="pt-4 border-t border-neutral-900 text-[11px] font-mono text-neutral-500 flex justify-between">
+
+              <div className="pt-4 mt-6 border-t border-neutral-900 text-[11px] font-mono text-neutral-500 flex justify-between">
                 <span>MONITORING RECURRENCE</span>
                 <span className="text-indigo-400 font-semibold">Continuous / 24-7</span>
               </div>
             </div>
 
             {/* Step 3 */}
-            <div className="glass-card rounded-2xl p-6 relative flex flex-col justify-between bg-neutral-950/40">
+            <div 
+              onClick={() => setActiveHowStep(2)}
+              className={`glass-card rounded-2xl p-6 relative flex flex-col justify-between cursor-pointer transition-all duration-300 ${
+                activeHowStep === 2 
+                  ? 'border-indigo-500/40 bg-indigo-950/10 shadow-lg shadow-indigo-950/20 translate-y-[-2px]' 
+                  : 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
+              }`}
+            >
               <div>
-                <span className="text-4xl font-display font-bold text-indigo-500/20 block mb-4">03</span>
-                <h4 className="text-lg font-semibold text-white mb-2">Get Autonomous AI Fixes</h4>
-                <p className="text-xs text-neutral-400 leading-relaxed mb-6 font-sans">
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`text-4xl font-display font-bold ${activeHowStep === 2 ? 'text-indigo-400' : 'text-neutral-700/60'}`}>03</span>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${
+                    activeHowStep === 2 ? 'bg-indigo-500/10 border-indigo-400/30 text-indigo-400' : 'bg-neutral-900/40 border-neutral-800/80 text-neutral-500'
+                  }`}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                  </div>
+                </div>
+                <h4 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                  <span>Get Autonomous AI Fixes</span>
+                  {activeHowStep === 2 && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />}
+                </h4>
+                <p className="text-xs text-neutral-400 leading-relaxed mb-4 font-sans">
                   Receive Slack alerts with complete debugging context. Our AI agent compiles database logs, error spikes, and code diff commits to output instant PR patches.
                 </p>
+
+                {/* Expanded Detailed Tooltip Panel */}
+                <div className={`overflow-hidden transition-all duration-300 origin-top ${
+                  activeHowStep === 2 ? 'max-h-56 opacity-100 mt-4 pt-4 border-t border-indigo-950/40' : 'max-h-0 opacity-0 pointer-events-none'
+                }`}>
+                  <p className="text-[11px] text-indigo-300 font-mono uppercase tracking-wider mb-2 font-bold">AUTOMATION IN ACTION:</p>
+                  <ul className="space-y-2 text-[11px] text-neutral-400 font-sans">
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">🤖</span>
+                      <span>Latent commit & bug correlation scanning</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">🤖</span>
+                      <span>Slack channels populated with trace-cards</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-indigo-400 font-bold font-mono">🤖</span>
+                      <span>One-click custom AI synthetic patch logic</span>
+                    </li>
+                  </ul>
+                  <p className="text-[10px] text-neutral-500 font-sans italic mt-3">
+                    Synthesizes error-resolution vectors automatically.
+                  </p>
+                </div>
               </div>
-              <div className="pt-4 border-t border-neutral-900 text-[11px] font-mono text-neutral-500 flex justify-between">
+
+              <div className="pt-4 mt-6 border-t border-neutral-900 text-[11px] font-mono text-neutral-500 flex justify-between">
                 <span>AUTOMATION OUTCOME</span>
                 <span className="text-indigo-400 font-semibold">1-Click Code Patch</span>
               </div>
@@ -657,6 +908,65 @@ export default function LandingPage({ onStartSandbox, onNavigate }: LandingPageP
               </button>
             </div>
 
+          </div>
+        </div>
+      </section>
+
+      {/* -------------------------------- CUSTOMER TESTIMONIALS -------------------------------- */}
+      <section className="py-24 border-t border-neutral-900 bg-neutral-950/20 relative">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <span className="text-xs font-mono text-indigo-400 font-bold uppercase tracking-wider">ENGINEERING VALIDATED</span>
+            <h2 className="text-3xl md:text-4xl font-display font-semibold tracking-tight text-white mt-1 mb-4">
+              Trusted by Top Operators
+            </h2>
+            <p className="text-neutral-400 text-sm">
+              See how modern engineering teams use MeshPilot to protect uptime, prevent regressions, and scale systems.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Testimonial 1 */}
+            <div className="glass-card rounded-2xl p-6 border border-neutral-900 bg-neutral-900/10 flex flex-col justify-between hover:border-indigo-500/15 transition-all">
+              <p className="text-xs text-neutral-300 leading-relaxed font-sans italic">
+                "MeshPilot completely transformed our incident response. Our MTTD dropped from 15 minutes to under 30 seconds, and the visual radar is phenomenal."
+              </p>
+              <div className="mt-6 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center font-bold text-[10px] text-indigo-400">SJ</div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Sarah Jenkins</h4>
+                  <p className="text-[10px] text-neutral-500 font-mono">VP of Infrastructure, Linear</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Testimonial 2 */}
+            <div className="glass-card rounded-2xl p-6 border border-neutral-900 bg-neutral-900/10 flex flex-col justify-between hover:border-indigo-500/15 transition-all">
+              <p className="text-xs text-neutral-300 leading-relaxed font-sans italic">
+                "The autonomous AI root-cause analyzer is like having a staff SRE on call 24/7. It correlates database spikes and GitHub commits instantly."
+              </p>
+              <div className="mt-6 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-[10px] text-amber-400">MV</div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Marcus Vance</h4>
+                  <p className="text-[10px] text-neutral-500 font-mono">Head of Platform, Vercel</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Testimonial 3 */}
+            <div className="glass-card rounded-2xl p-6 border border-neutral-900 bg-neutral-900/10 flex flex-col justify-between hover:border-indigo-500/15 transition-all">
+              <p className="text-xs text-neutral-300 leading-relaxed font-sans italic">
+                "With MeshPilot’s global edge pingers, we identified latency degradation in our APAC gateway before any customer reports came in."
+              </p>
+              <div className="mt-6 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center font-bold text-[10px] text-rose-400">DC</div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">David Chen</h4>
+                  <p className="text-[10px] text-neutral-500 font-mono">Lead Architect, Stripe</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

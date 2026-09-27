@@ -26,6 +26,9 @@ import {
 // Monitoring & DB imports
 import { db } from './src/db/index.ts';
 import {
+  users,
+  organizations,
+  organizationMembers,
   projects,
   monitors,
   monitorChecks,
@@ -39,7 +42,8 @@ import {
   errors,
   errorEvents,
   projectIngestionKeys,
-  releases
+  releases,
+  loginActivities
 } from './src/db/schema.ts';
 import { processMonitorCheck } from './src/lib/monitoring/processMonitor.ts';
 import { processApiMonitorCheck } from './src/lib/monitoring/checkApiMonitor.ts';
@@ -60,6 +64,12 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+
+import { handleClerkWebhook } from './src/api/webhooks/clerk.ts';
+
+// Raw body parser for Clerk Webhook endpoint
+app.post('/api/webhooks/clerk', express.raw({ type: 'application/json' }), handleClerkWebhook);
+
 app.use(express.json());
 
 // --- PUBLIC & HEALH PATHS ---
@@ -2116,6 +2126,32 @@ app.get('/api/admin/audit-logs', requireAuth, requireAdmin, async (req: AuthRequ
     res.json(logs);
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch audit logs' });
+  }
+});
+
+// Admin login activities list
+app.get('/api/admin/activity', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const list = await db.select({
+      id: loginActivities.id,
+      userId: loginActivities.userId,
+      clerkUserId: loginActivities.clerkUserId,
+      eventType: loginActivities.eventType,
+      sessionId: loginActivities.sessionId,
+      userAgent: loginActivities.userAgent,
+      ipAddress: loginActivities.ipAddress,
+      createdAt: loginActivities.createdAt,
+      userEmail: users.email,
+      userName: users.name,
+    })
+    .from(loginActivities)
+    .leftJoin(users, eq(loginActivities.userId, users.id))
+    .orderBy(desc(loginActivities.createdAt))
+    .limit(100);
+
+    res.json(list);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch admin login activities' });
   }
 });
 

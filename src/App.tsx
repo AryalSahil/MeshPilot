@@ -711,7 +711,7 @@ function AppLayout() {
 
 // Top level App wrapper with provider
 export default function App() {
-  const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
+  const CLERK_PUBLISHABLE_KEY = import.meta.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
 
   if (!CLERK_PUBLISHABLE_KEY) {
     return (
@@ -721,7 +721,7 @@ export default function App() {
           <span>Configuration Required</span>
         </div>
         <p className="font-sans leading-relaxed text-neutral-500">
-          Clerk Publishable Key is missing. Please configure <code>VITE_CLERK_PUBLISHABLE_KEY</code> in your environment variables to activate the security layers.
+          Clerk Publishable Key is missing. Please configure <code>NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code> in your environment variables to activate the security layers.
         </p>
       </div>
     );

@@ -176,6 +176,7 @@ export const usageEvents = pgTable('usage_events', {
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(organizationMembers),
   auditLogs: many(auditLogs),
+  loginActivities: many(loginActivities),
 }));
 
 export const organizationsRelations = relations(organizations, ({ one, many }) => ({
@@ -498,5 +499,24 @@ export const apiMonitorChecksRelations = relations(apiMonitorChecks, ({ one }) =
   monitor: one(apiMonitors, {
     fields: [apiMonitorChecks.apiMonitorId],
     references: [apiMonitors.id],
+  }),
+}));
+
+// Login Activity table for real tracking
+export const loginActivities = pgTable('login_activities', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  clerkUserId: text('clerk_user_id').notNull(),
+  eventType: text('event_type').notNull(), // 'SIGN_IN', 'SIGN_OUT', 'REGISTRATION', 'SIGN_IN_FAILED'
+  sessionId: text('session_id'),
+  userAgent: text('user_agent'),
+  ipAddress: text('ip_address'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const loginActivitiesRelations = relations(loginActivities, ({ one }) => ({
+  user: one(users, {
+    fields: [loginActivities.userId],
+    references: [users.id],
   }),
 }));

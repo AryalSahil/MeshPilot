@@ -93,6 +93,7 @@ export default function AdminDashboardLayout() {
   const [plans, setPlans] = useState<any[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loginActivitiesList, setLoginActivitiesList] = useState<any[]>([]);
 
   // Reload database variables
   const reloadData = async () => {
@@ -149,6 +150,14 @@ export default function AdminDashboardLayout() {
           setAuditLogs(mappedLogs);
         } else {
           setAuditLogs(localLogs);
+        }
+
+        const activityRes = await fetch('/api/admin/activity', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (activityRes.ok) {
+          const dbActivities = await activityRes.json();
+          setLoginActivitiesList(dbActivities);
         }
       } catch (err) {
         console.error('Failed to reload admin data from DB:', err);
@@ -218,6 +227,7 @@ export default function AdminDashboardLayout() {
     { label: 'AI Request Logs', path: '/admin/ai', icon: Brain },
     { label: 'System Clusters', path: '/admin/system', icon: Cpu },
     { label: 'Support Queue', path: '/admin/support', icon: MessageSquare },
+    { label: 'Login Activity', path: '/admin/activity', icon: Activity },
     { label: 'Audit Trail', path: '/admin/audit-logs', icon: History },
     { label: 'Gateway Settings', path: '/admin/settings', icon: Settings },
   ];
@@ -315,6 +325,8 @@ export default function AdminDashboardLayout() {
             reloadData();
           }
         }} />;
+      case '/admin/activity':
+        return <AdminActivityView activities={loginActivitiesList} />;
       case '/admin/settings':
         return <AdminSettingsView adminUser={adminUser} />;
       default:
@@ -1691,6 +1703,57 @@ function AdminAuditLogsView({ auditLogs, onClear }: { auditLogs: any[]; onClear:
         {auditLogs.length === 0 && (
           <p className="text-xs font-mono text-neutral-600 text-center py-16">
             Zero security log events detected. No admin actions taken during this session.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 12b. ADMIN LOGIN ACTIVITIES
+function AdminActivityView({ activities }: { activities: any[] }) {
+  return (
+    <div className="space-y-6 animate-fade-in-up font-sans">
+      <div>
+        <h2 className="text-xl font-display font-semibold text-white">Live User Authentication Events</h2>
+        <p className="text-xs text-neutral-500 mt-0.5">Real-time session events tracked and synchronized from Clerk ID webhooks.</p>
+      </div>
+
+      <div className="border border-neutral-900 rounded-2xl bg-neutral-950/40 overflow-hidden divide-y divide-neutral-900">
+        {activities.map((act) => (
+          <div key={act.id} className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs hover:bg-neutral-900/10 transition-colors gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase ${
+                act.eventType === 'REGISTRATION' 
+                  ? 'bg-indigo-950 text-indigo-400 border border-indigo-900/30' 
+                  : act.eventType === 'SIGN_IN'
+                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-900/30'
+                  : act.eventType === 'SIGN_OUT'
+                  ? 'bg-amber-950 text-amber-400 border border-amber-900/30'
+                  : 'bg-red-950 text-red-400 border border-red-900/30'
+              }`}>
+                {act.eventType}
+              </span>
+              <span className="text-[10px] font-mono text-neutral-500">[{act.ipAddress || '127.0.0.1'}]</span>
+              <span className="text-white font-bold">{act.userName || 'User'}</span>
+              <span className="text-neutral-500">({act.userEmail || act.clerkUserId})</span>
+            </div>
+
+            <div className="sm:text-right space-y-1 font-mono">
+              {act.userAgent && (
+                <span className="text-[9px] text-neutral-500 block max-w-xs truncate" title={act.userAgent}>
+                  {act.userAgent}
+                </span>
+              )}
+              <span className="text-[9px] text-neutral-600 block">
+                {new Date(act.createdAt).toLocaleString()}
+              </span>
+            </div>
+          </div>
+        ))}
+        {activities.length === 0 && (
+          <p className="text-xs font-mono text-neutral-600 text-center py-16">
+            Zero user authentication activity events logged in database.
           </p>
         )}
       </div>

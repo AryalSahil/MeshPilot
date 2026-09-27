@@ -246,10 +246,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       await clerkSignOut();
+    } catch (error: any) {
+      console.warn('Silent fallback during Clerk signout network anomaly:', error);
+    } finally {
       setUser(null);
       setToken(null);
-    } catch (error) {
-      console.error('Signout error:', error);
+      // Clean up localStorage keys matching clerk to ensure a clean slate
+      try {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('clerk') || key.includes('__clerk'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch (e) {}
     }
   };
 

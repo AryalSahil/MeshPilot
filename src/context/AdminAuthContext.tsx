@@ -165,9 +165,21 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const adminLogout = async () => {
     try {
       await clerkSignOut();
+    } catch (error: any) {
+      console.warn('Silent fallback during Admin Clerk signout network anomaly:', error);
+    } finally {
       setAdminUser(null);
-    } catch (error) {
-      console.error('Admin Signout error:', error);
+      // Clean up localStorage keys matching clerk to ensure a clean slate
+      try {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('clerk') || key.includes('__clerk'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch (e) {}
     }
   };
 
